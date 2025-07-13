@@ -49,14 +49,14 @@ if (isset($_POST['bulk_action']) && isset($_POST['poll_ids']) && wp_verify_nonce
             
         case 'archive':
             foreach ($poll_ids as $poll_id) {
-                $database->update_poll($poll_id, ['status' => 'archived']);
+                $database->update_poll_status($poll_id, 'archived');
             }
             $message = count($poll_ids) . ' polls archived successfully.';
             break;
             
         case 'activate':
             foreach ($poll_ids as $poll_id) {
-                $database->update_poll($poll_id, ['status' => 'active']);
+                $database->update_poll_status($poll_id, 'active');
             }
             $message = count($poll_ids) . ' polls activated successfully.';
             break;
@@ -73,1374 +73,1328 @@ if (isset($_POST['bulk_action']) && isset($_POST['poll_ids']) && wp_verify_nonce
     }
     
     if (isset($message)) {
-        echo '<div class="notice notice-success is-dismissible"><p>' . esc_html($message) . '</p></div>';
+        // Store message in transient for display after redirect
+        set_transient('pollmaster_admin_notice', $message, 30);
+        echo '<script>window.location.href = "' . esc_url(admin_url('admin.php?page=pollmaster-manage-polls')) . '";</script>';
+        exit;
     }
 }
 
 ?>
 
-<div class="wrap pollmaster-manage-polls">
-    <div class="page-header">
-        <h1 class="page-title">
-            <span class="title-icon">📋</span>
-            Manage Polls
-        </h1>
-        
-        <div class="page-actions">
-            <a href="<?php echo esc_url(admin_url('admin.php?page=pollmaster-add-poll')); ?>" class="button button-primary">
-                <span class="button-icon">➕</span>
-                Add New Poll
-            </a>
-            
-            <button class="button button-secondary" data-action="export-polls">
-                <span class="button-icon">📤</span>
-                Export Polls
-            </button>
-        </div>
-    </div>
-
-    <!-- Filters -->
-    <div class="polls-filters">
-        <form method="get" class="filters-form">
-            <input type="hidden" name="page" value="pollmaster-manage-polls">
-            
-            <div class="filter-group">
-                <label for="search" class="filter-label">Search</label>
-                <input type="text" id="search" name="search" class="search-input" 
-                       placeholder="Search polls..." value="<?php echo esc_attr($filters['search']); ?>">
-            </div>
-            
-            <div class="filter-group">
-                <label for="status" class="filter-label">Status</label>
-                <select id="status" name="status" class="filter-select">
-                    <option value="">All Statuses</option>
-                    <option value="active" <?php selected($filters['status'], 'active'); ?>>Active</option>
-                    <option value="ended" <?php selected($filters['status'], 'ended'); ?>>Ended</option>
-                    <option value="archived" <?php selected($filters['status'], 'archived'); ?>>Archived</option>
-                </select>
-            </div>
-            
-            <div class="filter-group">
-                <label for="type" class="filter-label">Type</label>
-                <select id="type" name="type" class="filter-select">
-                    <option value="">All Types</option>
-                    <option value="regular" <?php selected($filters['type'], 'regular'); ?>>Regular</option>
-                    <option value="contest" <?php selected($filters['type'], 'contest'); ?>>Contest</option>
-                    <option value="weekly" <?php selected($filters['type'], 'weekly'); ?>>Weekly</option>
-                </select>
-            </div>
-            
-            <div class="filter-group">
-                <label for="date_from" class="filter-label">Date From</label>
-                <input type="date" id="date_from" name="date_from" class="filter-input" 
-                       value="<?php echo esc_attr($filters['date_from']); ?>">
-            </div>
-            
-            <div class="filter-group">
-                <label for="date_to" class="filter-label">Date To</label>
-                <input type="date" id="date_to" name="date_to" class="filter-input" 
-                       value="<?php echo esc_attr($filters['date_to']); ?>">
-            </div>
-            
-            <div class="filter-actions">
-                <button type="submit" class="button button-primary filter-button">
-                    <span class="button-icon">🔍</span>
-                    Filter
-                </button>
-                
-                <a href="<?php echo esc_url(admin_url('admin.php?page=pollmaster-manage-polls')); ?>" class="button clear-filters">
-                    <span class="button-icon">🔄</span>
-                    Clear
-                </a>
-            </div>
-        </form>
-    </div>
-
-    <!-- Results Info -->
-    <?php if (!empty($filters['search']) || !empty($filters['status']) || !empty($filters['type'])): ?>
-        <div class="results-info">
-            <p>
-                Showing <?php echo esc_html($total_polls); ?> poll(s)
-                <?php if (!empty($filters['search'])): ?>
-                    matching "<?php echo esc_html($filters['search']); ?>"
-                <?php endif; ?>
-                <?php if (!empty($filters['status'])): ?>
-                    with status "<?php echo esc_html($filters['status']); ?>"
-                <?php endif; ?>
-                <?php if (!empty($filters['type'])): ?>
-                    of type "<?php echo esc_html($filters['type']); ?>"
-                <?php endif; ?>
-            </p>
-        </div>
-    <?php endif; ?>
-
-    <!-- Polls Table -->
-    <?php if (!empty($polls)): ?>
-        <form method="post" class="polls-table-form">
-            <?php wp_nonce_field('bulk_polls_action'); ?>
-            
-            <!-- Bulk Actions -->
-            <div class="bulk-actions">
-                <select name="bulk_action" class="bulk-action-select">
-                    <option value="">Bulk Actions</option>
-                    <option value="delete">Delete</option>
-                    <option value="archive">Archive</option>
-                    <option value="activate">Activate</option>
-                    <option value="make_weekly">Make Weekly</option>
-                </select>
-                
-                <button type="submit" class="button bulk-action-button" onclick="return confirm('Are you sure you want to perform this bulk action?');">
-                    Apply
-                </button>
-                
-                <span class="bulk-info">
-                    <span class="selected-count">0</span> polls selected
-                </span>
-            </div>
-            
-            <div class="polls-table-container">
-                <table class="wp-list-table widefat fixed striped polls-table">
-                    <thead>
-                        <tr>
-                            <td class="manage-column column-cb check-column">
-                                <input type="checkbox" class="select-all">
-                            </td>
-                            <th class="manage-column column-title sortable">
-                                <a href="<?php echo esc_url(add_query_arg(['orderby' => 'title', 'order' => 'asc'])); ?>">
-                                    <span>Title</span>
-                                    <span class="sorting-indicator"></span>
-                                </a>
-                            </th>
-                            <th class="manage-column column-status">Status</th>
-                            <th class="manage-column column-type">Type</th>
-                            <th class="manage-column column-votes sortable">
-                                <a href="<?php echo esc_url(add_query_arg(['orderby' => 'votes', 'order' => 'desc'])); ?>">
-                                    <span>Votes</span>
-                                    <span class="sorting-indicator"></span>
-                                </a>
-                            </th>
-                            <th class="manage-column column-created sortable">
-                                <a href="<?php echo esc_url(add_query_arg(['orderby' => 'created_at', 'order' => 'desc'])); ?>">
-                                    <span>Created</span>
-                                    <span class="sorting-indicator"></span>
-                                </a>
-                            </th>
-                            <th class="manage-column column-actions">Actions</th>
-                        </tr>
-                    </thead>
-                    
-                    <tbody>
-                        <?php foreach ($polls as $poll): ?>
-                            <?php
-                            $poll_id = $poll['id'];
-                            $title = $poll['title'];
-                            $status = $poll['status'];
-                            $total_votes = $poll['total_votes'] ?? 0;
-                            $created_date = date('M j, Y', strtotime($poll['created_at']));
-                            $is_contest = !empty($poll['is_contest']);
-                            $is_weekly = !empty($poll['is_weekly']);
-                            $end_date = $poll['end_date'] ? date('M j, Y', strtotime($poll['end_date'])) : null;
-                            ?>
-                            
-                            <tr class="poll-row" data-poll-id="<?php echo esc_attr($poll_id); ?>">
-                                <th class="check-column">
-                                    <input type="checkbox" name="poll_ids[]" value="<?php echo esc_attr($poll_id); ?>" class="poll-checkbox">
-                                </th>
-                                
-                                <td class="column-title">
-                                    <div class="poll-title-wrapper">
-                                        <strong class="poll-title">
-                                            <a href="<?php echo esc_url(admin_url('admin.php?page=pollmaster-edit-poll&poll_id=' . $poll_id)); ?>" class="poll-title-link">
-                                                <?php echo esc_html($title); ?>
-                                            </a>
-                                        </strong>
-                                        
-                                        <?php if (!empty($poll['description'])): ?>
-                                            <div class="poll-description">
-                                                <?php echo esc_html(wp_trim_words($poll['description'], 15)); ?>
-                                            </div>
-                                        <?php endif; ?>
-                                        
-                                        <div class="poll-badges">
-                                            <?php if ($is_contest): ?>
-                                                <span class="poll-badge contest">
-                                                    <span class="badge-icon">🏆</span>
-                                                    Contest
-                                                </span>
-                                            <?php endif; ?>
-                                            
-                                            <?php if ($is_weekly): ?>
-                                                <span class="poll-badge weekly">
-                                                    <span class="badge-icon">📅</span>
-                                                    Weekly
-                                                </span>
-                                            <?php endif; ?>
-                                            
-                                            <?php if ($end_date): ?>
-                                                <span class="poll-badge end-date">
-                                                    <span class="badge-icon">🏁</span>
-                                                    Ends: <?php echo esc_html($end_date); ?>
-                                                </span>
-                                            <?php endif; ?>
-                                        </div>
-                                        
-                                        <div class="row-actions">
-                                            <span class="edit">
-                                                <a href="<?php echo esc_url(admin_url('admin.php?page=pollmaster-edit-poll&poll_id=' . $poll_id)); ?>">Edit</a> |
-                                            </span>
-                                            <span class="view">
-                                                <a href="<?php echo esc_url(admin_url('admin.php?page=pollmaster-poll-results&poll_id=' . $poll_id)); ?>">View Results</a> |
-                                            </span>
-                                            <span class="duplicate">
-                                                <a href="<?php echo esc_url(admin_url('admin.php?page=pollmaster-add-poll&duplicate=' . $poll_id)); ?>">Duplicate</a> |
-                                            </span>
-                                            <span class="delete">
-                                                <a href="#" class="delete-poll" data-poll-id="<?php echo esc_attr($poll_id); ?>">Delete</a>
-                                            </span>
-                                        </div>
-                                    </div>
-                                </td>
-                                
-                                <td class="column-status">
-                                    <span class="status-badge status-<?php echo esc_attr($status); ?>">
-                                        <?php echo esc_html(ucfirst($status)); ?>
-                                    </span>
-                                </td>
-                                
-                                <td class="column-type">
-                                    <div class="poll-type">
-                                        <?php if ($is_contest): ?>
-                                            <span class="type-icon">🏆</span>
-                                            Contest
-                                        <?php elseif ($is_weekly): ?>
-                                            <span class="type-icon">📅</span>
-                                            Weekly
-                                        <?php else: ?>
-                                            <span class="type-icon">📋</span>
-                                            Regular
-                                        <?php endif; ?>
-                                    </div>
-                                </td>
-                                
-                                <td class="column-votes">
-                                    <div class="votes-info">
-                                        <span class="votes-count"><?php echo esc_html($total_votes); ?></span>
-                                        <span class="votes-label">votes</span>
-                                    </div>
-                                </td>
-                                
-                                <td class="column-created">
-                                    <div class="created-info">
-                                        <span class="created-date"><?php echo esc_html($created_date); ?></span>
-                                        <span class="created-time"><?php echo esc_html(date('g:i A', strtotime($poll['created_at']))); ?></span>
-                                    </div>
-                                </td>
-                                
-                                <td class="column-actions">
-                                    <div class="action-buttons">
-                                        <a href="<?php echo esc_url(admin_url('admin.php?page=pollmaster-edit-poll&poll_id=' . $poll_id)); ?>" 
-                                           class="action-button edit" title="Edit Poll">
-                                            <span class="button-icon">✏️</span>
-                                        </a>
-                                        
-                                        <a href="<?php echo esc_url(admin_url('admin.php?page=pollmaster-poll-results&poll_id=' . $poll_id)); ?>" 
-                                           class="action-button results" title="View Results">
-                                            <span class="button-icon">📊</span>
-                                        </a>
-                                        
-                                        <button class="action-button preview" data-poll-id="<?php echo esc_attr($poll_id); ?>" title="Preview Poll">
-                                            <span class="button-icon">👁️</span>
-                                        </button>
-                                        
-                                        <?php if ($is_contest && $status === 'ended'): ?>
-                                            <button class="action-button announce-winner" data-poll-id="<?php echo esc_attr($poll_id); ?>" title="Announce Winner">
-                                                <span class="button-icon">🏆</span>
-                                            </button>
-                                        <?php endif; ?>
-                                        
-                                        <button class="action-button delete" data-poll-id="<?php echo esc_attr($poll_id); ?>" title="Delete Poll">
-                                            <span class="button-icon">🗑️</span>
-                                        </button>
-                                    </div>
-                                </td>
-                            </tr>
-                        <?php endforeach; ?>
-                    </tbody>
-                </table>
-            </div>
-        </form>
-        
-        <!-- Pagination -->
-        <?php if ($total_pages > 1): ?>
-            <div class="polls-pagination">
-                <div class="pagination-info">
-                    <span class="pagination-text">
-                        Showing <?php echo esc_html(($current_page - 1) * $per_page + 1); ?>-<?php echo esc_html(min($current_page * $per_page, $total_polls)); ?> 
-                        of <?php echo esc_html($total_polls); ?> polls
-                    </span>
-                </div>
-                
-                <div class="pagination-links">
-                    <?php if ($current_page > 1): ?>
-                        <a href="<?php echo esc_url(add_query_arg('paged', 1)); ?>" class="pagination-link first">
-                            <span class="link-icon">⏮️</span>
-                            <span class="link-text">First</span>
-                        </a>
-                        
-                        <a href="<?php echo esc_url(add_query_arg('paged', $current_page - 1)); ?>" class="pagination-link prev">
-                            <span class="link-icon">⬅️</span>
-                            <span class="link-text">Previous</span>
-                        </a>
-                    <?php endif; ?>
-                    
-                    <?php
-                    $start_page = max(1, $current_page - 2);
-                    $end_page = min($total_pages, $current_page + 2);
-                    
-                    for ($i = $start_page; $i <= $end_page; $i++):
-                    ?>
-                        <?php if ($i == $current_page): ?>
-                            <span class="pagination-link current"><?php echo esc_html($i); ?></span>
-                        <?php else: ?>
-                            <a href="<?php echo esc_url(add_query_arg('paged', $i)); ?>" class="pagination-link"><?php echo esc_html($i); ?></a>
-                        <?php endif; ?>
-                    <?php endfor; ?>
-                    
-                    <?php if ($current_page < $total_pages): ?>
-                        <a href="<?php echo esc_url(add_query_arg('paged', $current_page + 1)); ?>" class="pagination-link next">
-                            <span class="link-text">Next</span>
-                            <span class="link-icon">➡️</span>
-                        </a>
-                        
-                        <a href="<?php echo esc_url(add_query_arg('paged', $total_pages)); ?>" class="pagination-link last">
-                            <span class="link-text">Last</span>
-                            <span class="link-icon">⏭️</span>
-                        </a>
-                    <?php endif; ?>
-                </div>
-            </div>
-        <?php endif; ?>
-        
-    <?php else: ?>
-        <!-- No Polls Found -->
-        <div class="no-polls-found">
-            <div class="no-polls-icon">📋</div>
-            <h2 class="no-polls-title">No Polls Found</h2>
-            <p class="no-polls-message">
-                <?php if (!empty($filters['search']) || !empty($filters['status']) || !empty($filters['type'])): ?>
-                    No polls match your current filters. Try adjusting your search criteria.
-                <?php else: ?>
-                    You haven't created any polls yet. Create your first poll to get started!
-                <?php endif; ?>
-            </p>
-            
-            <div class="no-polls-actions">
-                <a href="<?php echo esc_url(admin_url('admin.php?page=pollmaster-add-poll')); ?>" class="button button-primary">
-                    <span class="button-icon">➕</span>
-                    Create Your First Poll
-                </a>
-                
-                <?php if (!empty($filters['search']) || !empty($filters['status']) || !empty($filters['type'])): ?>
-                    <a href="<?php echo esc_url(admin_url('admin.php?page=pollmaster-manage-polls')); ?>" class="button button-secondary">
-                        <span class="button-icon">🔄</span>
-                        Clear Filters
+<div class="pollmaster-admin-page bg-gradient-to-br from-slate-50 to-blue-50 min-h-screen">
+    <?php
+    // Display admin notices from transients
+    if ($notice = get_transient('pollmaster_admin_notice')) {
+        echo '<div class="alert alert-success mb-6 shadow-lg"><div><svg xmlns="http://www.w3.org/2000/svg" class="stroke-current flex-shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg><span>' . esc_html($notice) . '</span></div></div>';
+        delete_transient('pollmaster_admin_notice');
+    }
+    
+    // Display URL parameter messages
+    if (isset($_GET['message'])) {
+        switch ($_GET['message']) {
+            case 'deleted':
+                echo '<div class="alert alert-success mb-6 shadow-lg"><div><svg xmlns="http://www.w3.org/2000/svg" class="stroke-current flex-shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg><span>' . esc_html__('Poll deleted successfully.', 'pollmaster') . '</span></div></div>';
+                break;
+        }
+    }
+    
+    if (isset($_GET['error'])) {
+        switch ($_GET['error']) {
+            case 'delete_failed':
+                echo '<div class="alert alert-error mb-6 shadow-lg"><div><svg xmlns="http://www.w3.org/2000/svg" class="stroke-current flex-shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg><span>' . esc_html__('Failed to delete poll.', 'pollmaster') . '</span></div></div>';
+                break;
+        }
+    }
+    ?>
+    
+    <!-- Modern Page Header -->
+    <div class="hero bg-gradient-to-r from-primary to-secondary text-primary-content rounded-2xl mb-8 shadow-2xl">
+        <div class="hero-content text-center py-12">
+            <div class="max-w-md">
+                <div class="text-6xl mb-4">📊</div>
+                <h1 class="text-5xl font-bold mb-4">Manage Polls</h1>
+                <p class="text-lg opacity-90 mb-6">Create, edit, and manage all your polls from one powerful dashboard</p>
+                <div class="flex gap-4 justify-center">
+                    <a href="<?php echo esc_url(admin_url('admin.php?page=pollmaster-add-poll')); ?>" class="btn btn-accent btn-lg gap-2 shadow-lg hover:shadow-xl transition-all">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" /></svg>
+                        Create New Poll
                     </a>
-                <?php endif; ?>
+                    
+                    <button class="btn btn-outline btn-lg gap-2 text-white border-white hover:bg-white hover:text-primary" onclick="exportPollData()">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                        Export Data
+                    </button>
+                </div>
             </div>
         </div>
-    <?php endif; ?>
-</div>
+    </div>
 
-<!-- Poll Preview Modal -->
-<div id="poll-preview-modal" class="pollmaster-modal" style="display: none;">
-    <div class="modal-overlay"></div>
-    <div class="modal-container">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h3 class="modal-title">Poll Preview</h3>
-                <button class="modal-close" aria-label="Close modal">
-                    <span class="close-icon">×</span>
-                </button>
+    <!-- Advanced Filters Section -->
+    <div class="card bg-base-100 shadow-xl mb-8">
+        <div class="card-body">
+            <div class="flex items-center gap-3 mb-6">
+                <div class="text-2xl">🔍</div>
+                <h2 class="card-title text-2xl">Search & Filter Polls</h2>
             </div>
             
-            <div class="modal-body">
-                <div id="poll-preview-content">
-                    <!-- Poll preview will be loaded here via AJAX -->
-                    <div class="loading-placeholder">
-                        <div class="loading-spinner"></div>
-                        <p>Loading poll preview...</p>
+            <form method="get" class="space-y-6">
+                <input type="hidden" name="page" value="pollmaster-manage-polls">
+                
+                <!-- Search Bar -->
+                <div class="form-control">
+                    <div class="input-group">
+                        <input type="text" id="search" name="search" value="<?php echo esc_attr($filters['search']); ?>" placeholder="Search polls by question, options, or description..." class="input input-bordered input-lg flex-1" />
+                        <button type="submit" class="btn btn-primary btn-lg">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+                        </button>
                     </div>
                 </div>
+                
+                <!-- Filter Grid -->
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                    <div class="form-control">
+                        <label class="label" for="status">
+                            <span class="label-text font-semibold">📊 Status</span>
+                        </label>
+                        <select id="status" name="status" class="select select-bordered">
+                            <option value="">All Statuses</option>
+                            <option value="active" <?php selected($filters['status'], 'active'); ?>>🟢 Active</option>
+                            <option value="ended" <?php selected($filters['status'], 'ended'); ?>>🔴 Ended</option>
+                            <option value="archived" <?php selected($filters['status'], 'archived'); ?>>📦 Archived</option>
+                        </select>
+                    </div>
+                    
+                    <div class="form-control">
+                        <label class="label" for="type">
+                            <span class="label-text font-semibold">🏷️ Type</span>
+                        </label>
+                        <select id="type" name="type" class="select select-bordered">
+                            <option value="">All Types</option>
+                            <option value="regular" <?php selected($filters['type'], 'regular'); ?>>📝 Regular</option>
+                            <option value="weekly" <?php selected($filters['type'], 'weekly'); ?>>📅 Weekly</option>
+                            <option value="contest" <?php selected($filters['type'], 'contest'); ?>>🏆 Contest</option>
+                        </select>
+                    </div>
+                    
+                    <div class="form-control">
+                        <label class="label" for="date_from">
+                            <span class="label-text font-semibold">📅 From Date</span>
+                        </label>
+                        <input type="date" id="date_from" name="date_from" value="<?php echo esc_attr($filters['date_from']); ?>" class="input input-bordered" />
+                    </div>
+                    
+                    <div class="form-control">
+                        <label class="label" for="date_to">
+                            <span class="label-text font-semibold">📅 To Date</span>
+                        </label>
+                        <input type="date" id="date_to" name="date_to" value="<?php echo esc_attr($filters['date_to']); ?>" class="input input-bordered" />
+                    </div>
+                </div>
+                
+                <div class="flex gap-3 justify-end">
+                    <a href="<?php echo esc_url(admin_url('admin.php?page=pollmaster-manage-polls')); ?>" class="btn btn-ghost gap-2">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+                        Clear Filters
+                    </a>
+                    <button type="submit" class="btn btn-primary gap-2">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.207A1 1 0 013 6.5V4z" /></svg>
+                        Apply Filters
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modern Polls Management -->
+    <div class="card bg-base-100 shadow-xl">
+        <div class="card-body">
+            <form method="post" id="polls-form">
+                <?php wp_nonce_field('bulk_polls_action'); ?>
+                
+                <!-- Bulk Actions & Stats -->
+                <div class="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 mb-6">
+                    <div class="flex items-center gap-4">
+                        <div class="stats shadow">
+                            <div class="stat">
+                                <div class="stat-title">Total Polls</div>
+                                <div class="stat-value text-primary"><?php echo esc_html($total_polls); ?></div>
+                            </div>
+                        </div>
+                        
+                        <div class="flex gap-2">
+                            <select name="bulk_action" id="bulk-action-selector" class="select select-bordered">
+                                <option value="-1">Bulk Actions</option>
+                                <option value="activate">✅ Activate</option>
+                                <option value="archive">📦 Archive</option>
+                                <option value="delete">🗑️ Delete</option>
+                                <option value="make_weekly">📅 Make Weekly</option>
+                            </select>
+                            <button type="submit" id="doaction" class="btn btn-primary">Apply</button>
+                        </div>
+                    </div>
+                    
+                    <!-- Pagination -->
+                    <?php if ($total_pages > 1): ?>
+                        <div class="join">
+                            <?php if ($current_page > 1): ?>
+                                <a class="join-item btn" href="<?php echo esc_url(add_query_arg('paged', 1)); ?>">«</a>
+                                <a class="join-item btn" href="<?php echo esc_url(add_query_arg('paged', $current_page - 1)); ?>">‹</a>
+                            <?php endif; ?>
+                            
+                            <button class="join-item btn btn-active"><?php echo esc_html($current_page); ?></button>
+                            <span class="join-item btn btn-disabled">of <?php echo esc_html($total_pages); ?></span>
+                            
+                            <?php if ($current_page < $total_pages): ?>
+                                <a class="join-item btn" href="<?php echo esc_url(add_query_arg('paged', $current_page + 1)); ?>">›</a>
+                                <a class="join-item btn" href="<?php echo esc_url(add_query_arg('paged', $total_pages)); ?>">»</a>
+                            <?php endif; ?>
+                        </div>
+                    <?php endif; ?>
+                </div>
+        
+                <!-- Responsive Table View -->
+                <?php if (empty($polls)): ?>
+                    <div class="hero bg-base-200 rounded-2xl">
+                        <div class="hero-content text-center">
+                            <div class="max-w-md">
+                                <div class="text-6xl mb-4">📊</div>
+                                <h3 class="text-3xl font-bold mb-4">No polls found</h3>
+                                <p class="text-lg mb-6">Create your first poll to get started with engaging your audience!</p>
+                                <a href="<?php echo esc_url(admin_url('admin.php?page=pollmaster-add-poll')); ?>" class="btn btn-primary btn-lg gap-2">
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" /></svg>
+                                    Create Your First Poll
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                <?php else: ?>
+                    <!-- Desktop Table View -->
+                    <div class="hidden lg:block overflow-x-auto">
+                        <table class="table table-zebra w-full">
+                            <thead>
+                                <tr class="bg-base-200">
+                                    <th class="w-12">
+                                        <input type="checkbox" id="select-all" class="checkbox checkbox-primary" />
+                                    </th>
+                                    <th class="text-left font-bold">📊 Poll Question</th>
+                                    <th class="text-center font-bold">🏷️ Type</th>
+                                    <th class="text-center font-bold">📈 Status</th>
+                                    <th class="text-center font-bold">🗳️ Votes</th>
+                                    <th class="text-center font-bold">📅 Created</th>
+                                    <th class="text-center font-bold">⚙️ Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php foreach ($polls as $poll): ?>
+                                    <?php
+                                    $poll_results = $database->get_poll_results($poll['id']);
+                                    $total_votes = $poll_results['total_votes'];
+                                    $status_colors = [
+                                        'active' => 'badge-success',
+                                        'ended' => 'badge-error', 
+                                        'archived' => 'badge-neutral'
+                                    ];
+                                    ?>
+                                    <tr class="hover:bg-base-100 transition-colors">
+                                        <td>
+                                            <input type="checkbox" name="poll_ids[]" value="<?php echo esc_attr($poll['id']); ?>" class="checkbox checkbox-primary poll-checkbox" />
+                                        </td>
+                                        <td>
+                                            <div class="flex flex-col">
+                                                <a href="<?php echo esc_url(admin_url('admin.php?page=pollmaster-poll-results&poll_id=' . $poll['id'])); ?>" class="font-bold text-lg hover:text-primary transition-colors link link-hover">
+                                                    <?php echo esc_html($poll['question']); ?>
+                                                </a>
+                                                <div class="text-sm text-base-content/70 mt-1">
+                                                    <span class="font-medium">A:</span> <?php echo esc_html($poll['option_a']); ?> • 
+                                                    <span class="font-medium">B:</span> <?php echo esc_html($poll['option_b']); ?>
+                                                </div>
+                                            </div>
+                                        </td>
+                                        <td class="text-center">
+                                            <div class="flex flex-col gap-1 items-center">
+                                                <?php if ($poll['is_contest']): ?>
+                                                    <div class="badge badge-warning gap-1">
+                                                        🏆 Contest
+                                                    </div>
+                                                <?php endif; ?>
+                                                
+                                                <?php if ($poll['is_weekly']): ?>
+                                                    <div class="badge badge-info gap-1">
+                                                        📅 Weekly
+                                                    </div>
+                                                <?php endif; ?>
+                                                
+                                                <div class="badge badge-outline gap-1">
+                                                    📝 <?php echo esc_html(ucfirst($poll['type'] ?? 'regular')); ?>
+                                                </div>
+                                            </div>
+                                        </td>
+                                        <td class="text-center">
+                                            <div class="badge <?php echo esc_attr($status_colors[$poll['status']] ?? 'badge-neutral'); ?> gap-1">
+                                                <?php echo esc_html(ucfirst($poll['status'])); ?>
+                                            </div>
+                                        </td>
+                                        <td class="text-center">
+                                            <div class="stat-value text-2xl text-primary font-bold"><?php echo esc_html($total_votes); ?></div>
+                                            <div class="text-xs text-base-content/70">total votes</div>
+                                        </td>
+                                        <td class="text-center">
+                                            <div class="text-sm font-medium"><?php echo esc_html(date('M j, Y', strtotime($poll['created_at']))); ?></div>
+                                            <div class="text-xs text-base-content/70"><?php echo esc_html(date('g:i A', strtotime($poll['created_at']))); ?></div>
+                                        </td>
+                                        <td>
+                                            <div class="flex gap-1 justify-center">
+                                                <div class="tooltip" data-tip="Edit Poll">
+                                                    <a href="<?php echo esc_url(admin_url('admin.php?page=pollmaster-edit-poll&poll_id=' . $poll['id'])); ?>" class="btn btn-sm btn-primary btn-square">
+                                                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
+                                                    </a>
+                                                </div>
+                                                
+                                                <div class="tooltip" data-tip="View Results">
+                                                    <a href="<?php echo esc_url(admin_url('admin.php?page=pollmaster-poll-results&poll_id=' . $poll['id'])); ?>" class="btn btn-sm btn-info btn-square">
+                                                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /></svg>
+                                                    </a>
+                                                </div>
+                                                
+                                                <div class="tooltip" data-tip="Duplicate Poll">
+                                                    <a href="<?php echo esc_url(admin_url('admin.php?page=pollmaster-add-poll&duplicate=' . $poll['id'])); ?>" class="btn btn-sm btn-secondary btn-square">
+                                                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
+                                                    </a>
+                                                </div>
+                                                
+                                                <div class="tooltip" data-tip="Delete Poll">
+                                                    <a href="<?php echo esc_url(wp_nonce_url(admin_url('admin.php?page=pollmaster-manage-polls&action=delete&poll_id=' . $poll['id']), 'delete_poll_' . $poll['id'])); ?>" class="btn btn-sm btn-error btn-square" onclick="return confirm('Are you sure you want to delete this poll?')">
+                                                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                                                    </a>
+                                                </div>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                    </div>
+                    
+                    <!-- Mobile Card View -->
+                    <div class="lg:hidden space-y-4">
+                        <?php foreach ($polls as $poll): ?>
+                            <?php
+                            $poll_results = $database->get_poll_results($poll['id']);
+                            $total_votes = $poll_results['total_votes'];
+                            $status_colors = [
+                                'active' => 'badge-success',
+                                'ended' => 'badge-error', 
+                                'archived' => 'badge-neutral'
+                            ];
+                            ?>
+                            <div class="card bg-base-100 border border-base-300 hover:shadow-lg transition-all duration-300">
+                                <div class="card-body p-4">
+                                    <div class="flex items-start justify-between mb-3">
+                                        <input type="checkbox" name="poll_ids[]" value="<?php echo esc_attr($poll['id']); ?>" class="checkbox checkbox-primary poll-checkbox" />
+                                        
+                                        <div class="flex gap-1">
+                                            <a href="<?php echo esc_url(admin_url('admin.php?page=pollmaster-edit-poll&poll_id=' . $poll['id'])); ?>" class="btn btn-xs btn-primary">
+                                                <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
+                                            </a>
+                                            <a href="<?php echo esc_url(admin_url('admin.php?page=pollmaster-poll-results&poll_id=' . $poll['id'])); ?>" class="btn btn-xs btn-info">
+                                                <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /></svg>
+                                            </a>
+                                        </div>
+                                    </div>
+                                    
+                                    <h3 class="font-bold text-lg mb-2">
+                                        <a href="<?php echo esc_url(admin_url('admin.php?page=pollmaster-poll-results&poll_id=' . $poll['id'])); ?>" class="link link-hover">
+                                            <?php echo esc_html($poll['question']); ?>
+                                        </a>
+                                    </h3>
+                                    
+                                    <div class="flex flex-wrap gap-2 mb-3">
+                                        <div class="badge <?php echo esc_attr($status_colors[$poll['status']] ?? 'badge-neutral'); ?>">
+                                            <?php echo esc_html(ucfirst($poll['status'])); ?>
+                                        </div>
+                                        
+                                        <?php if ($poll['is_contest']): ?>
+                                            <div class="badge badge-warning">🏆 Contest</div>
+                                        <?php endif; ?>
+                                        
+                                        <?php if ($poll['is_weekly']): ?>
+                                            <div class="badge badge-info">📅 Weekly</div>
+                                        <?php endif; ?>
+                                    </div>
+                                    
+                                    <div class="stats stats-horizontal shadow-sm">
+                                        <div class="stat">
+                                            <div class="stat-title text-xs">Votes</div>
+                                            <div class="stat-value text-lg text-primary"><?php echo esc_html($total_votes); ?></div>
+                                        </div>
+                                        <div class="stat">
+                                            <div class="stat-title text-xs">Created</div>
+                                            <div class="stat-value text-sm"><?php echo esc_html(date('M j, Y', strtotime($poll['created_at']))); ?></div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        <?php endforeach; ?>
+                    </div>
+    <?php endif; ?>
+    
+    <!-- Bottom Actions -->
+    <?php if (!empty($polls)): ?>
+        <div class="flex justify-between items-center mt-6 pt-6 border-t border-base-300">
+            <div class="flex gap-2">
+                <select name="bulk_action" class="select select-bordered">
+                    <option value="-1">Bulk Actions</option>
+                    <option value="activate">✅ Activate</option>
+                    <option value="archive">📦 Archive</option>
+                    <option value="delete">🗑️ Delete</option>
+                    <option value="make_weekly">📅 Make Weekly</option>
+                </select>
+                <button type="submit" class="btn btn-primary">Apply</button>
             </div>
             
-            <div class="modal-footer">
-                <button class="modal-button secondary" data-action="close-modal">
-                    Close
-                </button>
-                <button class="modal-button primary" data-action="edit-poll">
-                    <span class="button-icon">✏️</span>
-                    Edit Poll
-                </button>
+            <div class="text-sm text-base-content/70">
+                Showing <?php echo esc_html(min($per_page, $total_polls)); ?> of <?php echo esc_html($total_polls); ?> polls
             </div>
+        </div>
+    <?php endif; ?>
+    
+</form>
         </div>
     </div>
 </div>
 
 <style>
-/* Manage Polls Styles */
-.pollmaster-manage-polls {
-    padding: 20px 0;
+/* Modern Manage Polls Styles */
+:root {
+    --primary-gradient: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    --secondary-gradient: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+    --success-gradient: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+    --card-shadow: 0 10px 40px rgba(0, 0, 0, 0.1);
+    --card-shadow-hover: 0 20px 60px rgba(0, 0, 0, 0.15);
+    --border-radius: 16px;
+    --transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-.page-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 30px;
-    padding: 25px;
+.pollmaster-admin-page {
+    max-width: none !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 20px;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    min-height: 100vh;
+    background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
+    box-sizing: border-box;
+}
+
+/* Enhanced Hero Section */
+.hero {
+    background: var(--primary-gradient);
+    border-radius: var(--border-radius);
+    box-shadow: var(--card-shadow);
+    position: relative;
+    overflow: hidden;
+    margin-bottom: 32px;
+}
+
+.hero::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><defs><pattern id="grain" width="100" height="100" patternUnits="userSpaceOnUse"><circle cx="50" cy="50" r="1" fill="%23ffffff" opacity="0.1"/></pattern></defs><rect width="100" height="100" fill="url(%23grain)"/></svg>') repeat;
+    pointer-events: none;
+}
+
+.hero-content {
+    position: relative;
+    z-index: 1;
+    padding: 48px 32px;
+    text-align: center;
+}
+
+.hero-content h1 {
+    font-size: 3rem;
+    font-weight: 800;
+    color: white;
+    margin-bottom: 16px;
+    text-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+}
+
+.hero-content p {
+    font-size: 1.2rem;
+    color: rgba(255, 255, 255, 0.9);
+    margin-bottom: 32px;
+    max-width: 600px;
+    margin-left: auto;
+    margin-right: auto;
+}
+
+/* Modern Cards */
+.card {
     background: white;
-    border-radius: 12px;
-    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+    border-radius: var(--border-radius);
+    box-shadow: var(--card-shadow);
+    border: 1px solid rgba(0, 0, 0, 0.05);
+    transition: var(--transition);
+    overflow: hidden;
+    max-width: 100%;
 }
 
-.page-title {
-    font-size: 2rem;
-    margin: 0;
-    color: #2c3e50;
+.card:hover {
+    box-shadow: var(--card-shadow-hover);
+    transform: translateY(-4px);
+}
+
+.card-body {
+    padding: 32px;
+}
+
+.card-title {
+    font-size: 24px;
+    font-weight: 700;
+    color: #1e293b;
+    margin-bottom: 16px;
     display: flex;
     align-items: center;
     gap: 12px;
 }
 
-.page-actions {
-    display: flex;
-    gap: 10px;
-}
-
-.button {
-    display: flex;
+/* Enhanced Buttons */
+.btn {
+    padding: 12px 24px;
+    border: none;
+    border-radius: 12px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: var(--transition);
+    text-decoration: none;
+    display: inline-flex;
     align-items: center;
     gap: 8px;
-    padding: 10px 20px;
-    border-radius: 6px;
-    text-decoration: none;
-    font-size: 14px;
-    transition: all 0.3s ease;
-}
-
-/* Filters */
-.polls-filters {
-    background: white;
-    padding: 25px;
-    border-radius: 12px;
-    margin-bottom: 20px;
-    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
-}
-
-.filters-form {
-    display: flex;
-    gap: 20px;
-    align-items: end;
-    flex-wrap: wrap;
-}
-
-.filter-group {
-    display: flex;
-    flex-direction: column;
-    gap: 5px;
-    min-width: 150px;
-}
-
-.filter-label {
-    font-weight: 600;
-    color: #2c3e50;
-    font-size: 0.9rem;
-}
-
-.search-input,
-.filter-select,
-.filter-input {
-    padding: 8px 12px;
-    border: 2px solid #e9ecef;
-    border-radius: 6px;
-    font-size: 14px;
-    transition: border-color 0.3s ease;
-}
-
-.search-input:focus,
-.filter-select:focus,
-.filter-input:focus {
-    outline: none;
-    border-color: #3498db;
-}
-
-.filter-actions {
-    display: flex;
-    gap: 10px;
-    align-items: center;
-}
-
-.filter-button,
-.clear-filters {
-    padding: 8px 16px;
-    border: none;
-    border-radius: 6px;
-    cursor: pointer;
-    text-decoration: none;
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    transition: all 0.3s ease;
-}
-
-.filter-button {
-    background: #3498db;
-    color: white;
-}
-
-.filter-button:hover {
-    background: #2980b9;
-}
-
-.clear-filters {
-    background: #e74c3c;
-    color: white;
-}
-
-.clear-filters:hover {
-    background: #c0392b;
-    color: white;
-}
-
-/* Results Info */
-.results-info {
-    margin-bottom: 20px;
-    padding: 15px 20px;
-    background: #e8f4fd;
-    border-radius: 8px;
-    border-left: 4px solid #3498db;
-}
-
-/* Bulk Actions */
-.bulk-actions {
-    display: flex;
-    align-items: center;
-    gap: 15px;
-    margin-bottom: 20px;
-    padding: 15px 20px;
-    background: #f8f9fa;
-    border-radius: 8px;
-}
-
-.bulk-action-select {
-    padding: 6px 12px;
-    border: 1px solid #ddd;
-    border-radius: 4px;
-}
-
-.bulk-action-button {
-    padding: 6px 12px;
-    background: #6c757d;
-    color: white;
-    border: none;
-    border-radius: 4px;
-    cursor: pointer;
-    transition: background 0.3s ease;
-}
-
-.bulk-action-button:hover {
-    background: #5a6268;
-}
-
-.bulk-info {
-    color: #7f8c8d;
-    font-size: 0.9rem;
-}
-
-/* Polls Table */
-.polls-table-container {
-    background: white;
-    border-radius: 8px;
+    position: relative;
     overflow: hidden;
-    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+    text-transform: none;
 }
 
-.polls-table {
-    margin: 0;
+.btn::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+    transition: left 0.6s;
 }
 
-.polls-table th,
-.polls-table td {
-    padding: 15px 12px;
-    vertical-align: top;
+.btn:hover::before {
+    left: 100%;
 }
 
-.polls-table th {
-    background: #f8f9fa;
-    border-bottom: 2px solid #e9ecef;
-    font-weight: 600;
-    color: #2c3e50;
+.btn-primary {
+    background: linear-gradient(135deg, #3b82f6, #1d4ed8);
+    color: white;
+    box-shadow: 0 4px 15px rgba(59, 130, 246, 0.3);
 }
 
-.polls-table th a {
-    color: #2c3e50;
-    text-decoration: none;
+.btn-primary:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 25px rgba(59, 130, 246, 0.4);
+}
+
+.btn-secondary {
+    background: linear-gradient(135deg, #6b7280, #374151);
+    color: white;
+}
+
+.btn-accent {
+    background: linear-gradient(135deg, #f59e0b, #d97706);
+    color: white;
+    box-shadow: 0 4px 15px rgba(245, 158, 11, 0.3);
+}
+
+.btn-accent:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 25px rgba(245, 158, 11, 0.4);
+}
+
+.btn-outline {
+    background: transparent;
+    color: white;
+    border: 2px solid rgba(255, 255, 255, 0.5);
+}
+
+.btn-outline:hover {
+    background: white;
+    color: #3b82f6;
+    transform: translateY(-2px);
+}
+
+.btn-info {
+    background: linear-gradient(135deg, #06b6d4, #0891b2);
+    color: white;
+}
+
+.btn-error {
+    background: linear-gradient(135deg, #ef4444, #dc2626);
+    color: white;
+}
+
+.btn-ghost {
+    background: transparent;
+    color: #6b7280;
+    border: 1px solid #e5e7eb;
+}
+
+.btn-ghost:hover {
+    background: #f3f4f6;
+    color: #374151;
+}
+
+.btn-sm {
+    padding: 8px 16px;
+    font-size: 13px;
+}
+
+.btn-lg {
+    padding: 16px 32px;
+    font-size: 16px;
+}
+
+/* Enhanced Form Controls */
+.form-control {
+    margin-bottom: 16px;
+}
+
+.label {
     display: flex;
+    justify-content: space-between;
     align-items: center;
-    gap: 5px;
-}
-
-.polls-table th a:hover {
-    color: #3498db;
-}
-
-.poll-row {
-    transition: background-color 0.3s ease;
-}
-
-.poll-row:hover {
-    background-color: #f8f9fa;
-}
-
-.poll-row.selected {
-    background-color: #e3f2fd;
-}
-
-/* Poll Title Column */
-.poll-title-wrapper {
-    max-width: 300px;
-}
-
-.poll-title {
     margin-bottom: 8px;
 }
 
-.poll-title-link {
-    color: #2c3e50;
-    text-decoration: none;
+.label-text {
     font-weight: 600;
-    transition: color 0.3s ease;
+    color: #374151;
+    font-size: 14px;
 }
 
-.poll-title-link:hover {
-    color: #3498db;
+.input, .select {
+    width: 100%;
+    padding: 12px 16px;
+    border: 2px solid #e5e7eb;
+    border-radius: 8px;
+    font-size: 14px;
+    transition: var(--transition);
+    background: white;
+    font-family: inherit;
 }
 
-.poll-description {
-    color: #7f8c8d;
-    font-size: 0.9rem;
-    margin-bottom: 10px;
-    line-height: 1.4;
+.input:focus, .select:focus {
+    outline: none;
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+    transform: translateY(-1px);
 }
 
-.poll-badges {
+.input-bordered {
+    border-color: #d1d5db;
+}
+
+.select-bordered {
+    border-color: #d1d5db;
+}
+
+.input-group {
     display: flex;
+    align-items: stretch;
+}
+
+.input-group .input {
+    border-top-right-radius: 0;
+    border-bottom-right-radius: 0;
+    border-right: none;
+}
+
+.input-group .btn {
+    border-top-left-radius: 0;
+    border-bottom-left-radius: 0;
+}
+
+/* Enhanced Grid */
+.grid {
+    display: grid;
+    gap: 24px;
+}
+
+.grid-cols-1 {
+    grid-template-columns: repeat(1, minmax(0, 1fr));
+}
+
+.grid-cols-2 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.grid-cols-4 {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+@media (min-width: 768px) {
+    .md\:grid-cols-2 {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    .md\:grid-cols-4 {
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+}
+
+@media (min-width: 1024px) {
+    .lg\:grid-cols-2 {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    .lg\:grid-cols-4 {
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+}
+
+/* Spacing Utilities */
+.space-y-4 > * + * {
+    margin-top: 16px;
+}
+
+.space-y-6 > * + * {
+    margin-top: 24px;
+}
+
+.gap-2 {
     gap: 8px;
-    margin-bottom: 10px;
+}
+
+.gap-3 {
+    gap: 12px;
+}
+
+.gap-4 {
+    gap: 16px;
+}
+
+.gap-6 {
+    gap: 24px;
+}
+
+.mb-4 {
+    margin-bottom: 16px;
+}
+
+.mb-6 {
+    margin-bottom: 24px;
+}
+
+.mb-8 {
+    margin-bottom: 32px;
+}
+
+.mt-6 {
+    margin-top: 24px;
+}
+
+.pt-6 {
+    padding-top: 24px;
+}
+
+.p-6 {
+    padding: 24px;
+}
+
+/* Flexbox Utilities */
+.flex {
+    display: flex;
+}
+
+.flex-1 {
+    flex: 1 1 0%;
+}
+
+.flex-col {
+    flex-direction: column;
+}
+
+.flex-wrap {
     flex-wrap: wrap;
 }
 
-.poll-badge {
-    padding: 3px 8px;
+.items-center {
+    align-items: center;
+}
+
+.items-start {
+    align-items: flex-start;
+}
+
+.justify-center {
+    justify-content: center;
+}
+
+.justify-between {
+    justify-content: space-between;
+}
+
+.justify-end {
+    justify-content: flex-end;
+}
+
+/* Enhanced Alerts */
+.alert {
+    padding: 16px 20px;
     border-radius: 12px;
-    font-size: 0.75rem;
-    font-weight: 600;
+    margin-bottom: 24px;
     display: flex;
     align-items: center;
-    gap: 3px;
+    gap: 12px;
+    border: 1px solid;
+    font-weight: 500;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
 }
 
-.poll-badge.contest {
-    background: #fff3cd;
-    color: #856404;
+.alert-success {
+    background: linear-gradient(135deg, #d1fae5, #a7f3d0);
+    color: #065f46;
+    border-color: #10b981;
 }
 
-.poll-badge.weekly {
-    background: #d1ecf1;
-    color: #0c5460;
+.alert-error {
+    background: linear-gradient(135deg, #fee2e2, #fecaca);
+    color: #991b1b;
+    border-color: #ef4444;
 }
 
-.poll-badge.end-date {
-    background: #f8d7da;
-    color: #721c24;
-}
-
-.row-actions {
-    font-size: 0.85rem;
-}
-
-.row-actions a {
-    color: #3498db;
-    text-decoration: none;
-}
-
-.row-actions a:hover {
-    color: #2980b9;
-}
-
-.row-actions .delete a {
-    color: #e74c3c;
-}
-
-.row-actions .delete a:hover {
-    color: #c0392b;
-}
-
-/* Status Column */
-.status-badge {
-    padding: 5px 12px;
-    border-radius: 15px;
-    font-size: 0.8rem;
+/* Enhanced Badges */
+.badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 6px 12px;
+    border-radius: 20px;
+    font-size: 12px;
     font-weight: 600;
     text-transform: uppercase;
-    display: inline-block;
+    letter-spacing: 0.5px;
+    gap: 4px;
 }
 
-.status-badge.status-active {
-    background: #d4edda;
-    color: #155724;
+.badge-success {
+    background: linear-gradient(135deg, #d1fae5, #a7f3d0);
+    color: #065f46;
 }
 
-.status-badge.status-ended {
-    background: #f8d7da;
-    color: #721c24;
+.badge-error {
+    background: linear-gradient(135deg, #fee2e2, #fecaca);
+    color: #991b1b;
 }
 
-.status-badge.status-archived {
-    background: #e2e3e5;
-    color: #383d41;
+.badge-neutral {
+    background: linear-gradient(135deg, #f3f4f6, #e5e7eb);
+    color: #374151;
 }
 
-/* Type Column */
-.poll-type {
+.badge-warning {
+    background: linear-gradient(135deg, #fef3c7, #fde68a);
+    color: #92400e;
+}
+
+.badge-info {
+    background: linear-gradient(135deg, #dbeafe, #bfdbfe);
+    color: #1e40af;
+}
+
+.badge-outline {
+    background: transparent;
+    border: 1px solid #e5e7eb;
+    color: #6b7280;
+}
+
+/* Enhanced Stats */
+.stats {
     display: flex;
-    align-items: center;
-    gap: 6px;
-    font-size: 0.9rem;
-    color: #2c3e50;
-}
-
-/* Votes Column */
-.votes-info {
-    text-align: center;
-}
-
-.votes-count {
-    display: block;
-    font-size: 1.2rem;
-    font-weight: bold;
-    color: #2c3e50;
-}
-
-.votes-label {
-    display: block;
-    font-size: 0.8rem;
-    color: #7f8c8d;
-}
-
-/* Created Column */
-.created-info {
-    text-align: center;
-}
-
-.created-date {
-    display: block;
-    font-weight: 600;
-    color: #2c3e50;
-    margin-bottom: 2px;
-}
-
-.created-time {
-    display: block;
-    font-size: 0.8rem;
-    color: #7f8c8d;
-}
-
-/* Actions Column */
-.action-buttons {
-    display: flex;
-    gap: 5px;
-    justify-content: center;
-}
-
-.action-button {
-    width: 32px;
-    height: 32px;
-    border: none;
-    border-radius: 50%;
-    background: #f8f9fa;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: all 0.3s ease;
-    text-decoration: none;
-    color: inherit;
-}
-
-.action-button:hover {
-    background: #e9ecef;
-    transform: scale(1.1);
-}
-
-.action-button.edit:hover {
-    background: #3498db;
-    color: white;
-}
-
-.action-button.results:hover {
-    background: #2ecc71;
-    color: white;
-}
-
-.action-button.preview:hover {
-    background: #f39c12;
-    color: white;
-}
-
-.action-button.announce-winner:hover {
-    background: #e67e22;
-    color: white;
-}
-
-.action-button.delete:hover {
-    background: #e74c3c;
-    color: white;
-}
-
-/* Pagination */
-.polls-pagination {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 20px 25px;
-    background: white;
-    border-radius: 8px;
-    margin-top: 20px;
-    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
-}
-
-.pagination-info {
-    color: #7f8c8d;
-    font-size: 0.9rem;
-}
-
-.pagination-links {
-    display: flex;
-    gap: 5px;
-    align-items: center;
-}
-
-.pagination-link {
-    padding: 8px 12px;
-    border: 1px solid #e9ecef;
-    background: white;
-    color: #2c3e50;
-    text-decoration: none;
-    border-radius: 4px;
-    font-size: 0.9rem;
-    transition: all 0.3s ease;
-    display: flex;
-    align-items: center;
-    gap: 5px;
-}
-
-.pagination-link:hover {
-    border-color: #3498db;
-    color: #3498db;
-}
-
-.pagination-link.current {
-    background: #3498db;
-    color: white;
-    border-color: #3498db;
-}
-
-/* No Polls Found */
-.no-polls-found {
-    text-align: center;
-    padding: 60px 20px;
     background: white;
     border-radius: 12px;
-    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
-}
-
-.no-polls-icon {
-    font-size: 4rem;
-    margin-bottom: 20px;
-    opacity: 0.5;
-}
-
-.no-polls-title {
-    font-size: 1.8rem;
-    color: #2c3e50;
-    margin: 0 0 15px 0;
-}
-
-.no-polls-message {
-    font-size: 1.1rem;
-    color: #7f8c8d;
-    margin: 0 0 30px 0;
-    line-height: 1.6;
-}
-
-.no-polls-actions {
-    display: flex;
-    gap: 15px;
-    justify-content: center;
-    flex-wrap: wrap;
-}
-
-/* Modal Styles */
-.pollmaster-modal {
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    z-index: 10000;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-}
-
-.modal-overlay {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background: rgba(0, 0, 0, 0.8);
-}
-
-.modal-container {
-    position: relative;
-    max-width: 800px;
-    width: 90%;
-    max-height: 80vh;
-    overflow-y: auto;
-}
-
-.modal-content {
-    background: white;
-    border-radius: 12px;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
     overflow: hidden;
 }
 
-.modal-header {
-    padding: 20px 25px;
-    background: #f8f9fa;
-    border-bottom: 1px solid #e9ecef;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
+.stats-horizontal {
+    flex-direction: row;
 }
 
-.modal-title {
+.stat {
+    padding: 16px 20px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    border-right: 1px solid #f3f4f6;
+}
+
+.stat:last-child {
+    border-right: none;
+}
+
+.stat-title {
+    font-size: 12px;
+    color: #6b7280;
+    font-weight: 500;
+    margin-bottom: 4px;
+}
+
+.stat-value {
+    font-size: 20px;
+    font-weight: 700;
+    color: #1e293b;
+    margin-bottom: 2px;
+}
+
+.stat-desc {
+    font-size: 11px;
+    color: #9ca3af;
+}
+
+/* Enhanced Pagination */
+.join {
+    display: flex;
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.join-item {
+    border: none;
+    border-radius: 0;
     margin: 0;
-    font-size: 1.3rem;
-    color: #2c3e50;
 }
 
-.modal-close {
-    background: none;
-    border: none;
-    font-size: 1.5rem;
+.join-item:first-child {
+    border-top-left-radius: 8px;
+    border-bottom-left-radius: 8px;
+}
+
+.join-item:last-child {
+    border-top-right-radius: 8px;
+    border-bottom-right-radius: 8px;
+}
+
+.btn-active {
+    background: #3b82f6;
+    color: white;
+}
+
+.btn-disabled {
+    background: #f3f4f6;
+    color: #9ca3af;
+    cursor: not-allowed;
+}
+
+/* Enhanced Checkboxes */
+.checkbox {
+    width: 20px;
+    height: 20px;
+    border: 2px solid #d1d5db;
+    border-radius: 4px;
     cursor: pointer;
-    color: #7f8c8d;
-    padding: 5px;
-    border-radius: 50%;
-    transition: background 0.3s ease;
+    transition: var(--transition);
+    accent-color: #3b82f6;
 }
 
-.modal-close:hover {
-    background: #e9ecef;
+.checkbox:checked {
+    background: #3b82f6;
+    border-color: #3b82f6;
 }
 
-.modal-body {
-    padding: 25px;
+.checkbox-primary {
+    accent-color: #3b82f6;
 }
 
-.modal-footer {
-    padding: 20px 25px;
-    background: #f8f9fa;
-    border-top: 1px solid #e9ecef;
-    display: flex;
-    justify-content: flex-end;
-    gap: 10px;
+/* Poll Card Enhancements */
+.poll-card {
+    background: white;
+    border: 2px solid #e5e7eb;
+    border-radius: var(--border-radius);
+    padding: 24px;
+    margin-bottom: 20px;
+    transition: var(--transition);
+    position: relative;
+    overflow: hidden;
 }
 
-.modal-button {
-    padding: 10px 20px;
-    border: none;
-    border-radius: 6px;
-    cursor: pointer;
-    font-size: 1rem;
-    display: flex;
-    align-items: center;
-    gap: 8px;
+.poll-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(59, 130, 246, 0.05), transparent);
+    transition: left 0.6s;
+}
+
+.poll-card:hover::before {
+    left: 100%;
+}
+
+.poll-card:hover {
+    border-color: #3b82f6;
+    transform: translateY(-4px);
+    box-shadow: var(--card-shadow-hover);
+}
+
+/* Link Styling */
+.link {
+    color: #3b82f6;
+    text-decoration: none;
+    transition: var(--transition);
+}
+
+.link:hover {
+    color: #1d4ed8;
+    text-decoration: underline;
+}
+
+.link-hover:hover {
+    text-decoration: underline;
+}
+
+/* Text Utilities */
+.text-xs {
+    font-size: 12px;
+}
+
+.text-sm {
+    font-size: 14px;
+}
+
+.text-lg {
+    font-size: 18px;
+}
+
+.text-xl {
+    font-size: 20px;
+}
+
+.text-2xl {
+    font-size: 24px;
+}
+
+.text-3xl {
+    font-size: 30px;
+}
+
+.text-primary {
+    color: #3b82f6;
+}
+
+.text-primary-content {
+    color: white;
+}
+
+.font-bold {
+    font-weight: 700;
+}
+
+.font-semibold {
+    font-weight: 600;
+}
+
+/* Background Utilities */
+.bg-base-100 {
+    background: white;
+}
+
+.bg-base-200 {
+    background: #f8fafc;
+}
+
+.bg-base-300 {
+    background: #e2e8f0;
+}
+
+.bg-gradient-to-br {
+    background: linear-gradient(to bottom right, var(--tw-gradient-stops));
+}
+
+.bg-gradient-to-r {
+    background: linear-gradient(to right, var(--tw-gradient-stops));
+}
+
+.from-slate-50 {
+    --tw-gradient-from: #f8fafc;
+    --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to, rgba(248, 250, 252, 0));
+}
+
+.to-blue-50 {
+    --tw-gradient-to: #eff6ff;
+}
+
+.from-primary {
+    --tw-gradient-from: #3b82f6;
+    --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to, rgba(59, 130, 246, 0));
+}
+
+.to-secondary {
+    --tw-gradient-to: #6366f1;
+}
+
+/* Border Utilities */
+.border {
+    border-width: 1px;
+}
+
+.border-t {
+    border-top-width: 1px;
+}
+
+.border-base-300 {
+    border-color: #e2e8f0;
+}
+
+.rounded-2xl {
+    border-radius: 16px;
+}
+
+.rounded-lg {
+    border-radius: 8px;
+}
+
+/* Shadow Utilities */
+.shadow {
+    box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06);
+}
+
+.shadow-sm {
+    box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+}
+
+.shadow-lg {
+    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+}
+
+.shadow-xl {
+    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+}
+
+.shadow-2xl {
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+}
+
+/* Size Utilities */
+.min-h-screen {
+    min-height: 100vh;
+}
+
+.max-w-md {
+    max-width: auto !important;
+}
+
+.w-6 {
+    width: 24px;
+}
+
+.h-6 {
+    height: 24px;
+}
+
+.h-4 {
+    height: 16px;
+}
+
+.w-4 {
+    width: 16px;
+}
+
+/* Transition Utilities */
+.transition-all {
     transition: all 0.3s ease;
 }
 
-.modal-button.primary {
-    background: #3498db;
-    color: white;
+.transition-colors {
+    transition: color 0.3s ease;
 }
 
-.modal-button.primary:hover {
-    background: #2980b9;
+.duration-300 {
+    transition-duration: 300ms;
 }
 
-.modal-button.secondary {
-    background: #6c757d;
-    color: white;
+/* Hover Effects */
+.hover\:shadow-lg:hover {
+    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
 }
 
-.modal-button.secondary:hover {
-    background: #5a6268;
+.hover\:shadow-xl:hover {
+    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
 }
 
-.loading-placeholder {
-    text-align: center;
-    padding: 40px;
-}
-
-.loading-spinner {
-    width: 40px;
-    height: 40px;
-    border: 4px solid #e9ecef;
-    border-top: 4px solid #3498db;
-    border-radius: 50%;
-    animation: spin 1s linear infinite;
-    margin: 0 auto 20px auto;
-}
-
-@keyframes spin {
-    0% { transform: rotate(0deg); }
-    100% { transform: rotate(360deg); }
+.hover\:text-primary:hover {
+    color: #3b82f6;
 }
 
 /* Responsive Design */
-@media (max-width: 1200px) {
-    .polls-table {
-        font-size: 0.9rem;
-    }
-    
-    .polls-table th,
-    .polls-table td {
-        padding: 10px 8px;
-    }
-}
-
 @media (max-width: 768px) {
-    .page-header {
+    .pollmaster-admin-page {
+        padding: 16px;
+    }
+    
+    .hero-content {
+        padding: 32px 24px;
+    }
+    
+    .hero-content h1 {
+        font-size: 2rem;
+    }
+    
+    .card-body {
+        padding: 20px;
+    }
+    
+    .grid {
+        gap: 16px;
+    }
+    
+    .md\:grid-cols-2 {
+        grid-template-columns: 1fr;
+    }
+    
+    .md\:grid-cols-4 {
+        grid-template-columns: 1fr;
+    }
+    
+    .lg\:grid-cols-2 {
+        grid-template-columns: 1fr;
+    }
+    
+    .lg\:grid-cols-4 {
+        grid-template-columns: 1fr;
+    }
+    
+    .flex-col {
         flex-direction: column;
-        gap: 15px;
-        text-align: center;
     }
     
-    .filters-form {
+    .stats {
         flex-direction: column;
-        align-items: stretch;
     }
     
-    .filter-group {
-        min-width: auto;
+    .stat {
+        border-right: none;
+        border-bottom: 1px solid #f3f4f6;
     }
     
-    .polls-table-container {
-        overflow-x: auto;
-    }
-    
-    .polls-table {
-        min-width: 800px;
-    }
-    
-    .polls-pagination {
-        flex-direction: column;
-        gap: 15px;
-    }
-    
-    .pagination-links {
-        flex-wrap: wrap;
-        justify-content: center;
-    }
-    
-    .bulk-actions {
-        flex-direction: column;
-        align-items: stretch;
-        gap: 10px;
+    .stat:last-child {
+        border-bottom: none;
     }
 }
 
 @media (max-width: 480px) {
-    .page-title {
-        font-size: 1.5rem;
-        flex-direction: column;
-        gap: 8px;
+    .hero-content h1 {
+        font-size: 1.8rem;
     }
     
-    .page-actions {
-        flex-direction: column;
-        width: 100%;
+    .btn {
+        padding: 10px 16px;
+        font-size: 13px;
     }
     
-    .modal-container {
-        width: 95%;
+    .btn-lg {
+        padding: 14px 24px;
+        font-size: 15px;
+    }
+}
+
+/* Dark mode support */
+@media (prefers-color-scheme: dark) {
+    .bg-base-100 {
+        background: #1f2937;
+        color: #f9fafb;
     }
     
-    .modal-header,
-    .modal-body,
-    .modal-footer {
-        padding: 15px 20px;
+    .card {
+        background: #374151;
+        border-color: #4b5563;
+    }
+    
+    .input, .select {
+        background: #374151;
+        border-color: #4b5563;
+        color: #f9fafb;
+    }
+    
+    .pollmaster-admin-page {
+        background: linear-gradient(135deg, #1f2937 0%, #111827 100%);
     }
 }
 </style>
 
 <script>
-// Manage Polls JavaScript
-document.addEventListener('DOMContentLoaded', function() {
-    // Initialize manage polls functionality
-    initializeManagePolls();
+// Export function
+function exportPollData() {
+    // Create CSV content
+    let csvContent = "data:text/csv;charset=utf-8,";
+    csvContent += "ID,Question,Option A,Option B,Type,Status,Total Votes,Created\n";
     
-    function initializeManagePolls() {
-        bindEventHandlers();
-        updateBulkActionInfo();
-    }
+    // Add poll data
+    <?php foreach ($polls as $poll): ?>
+        <?php $poll_results = $database->get_poll_results($poll['id']); ?>
+        csvContent += "<?php echo esc_js($poll['id']); ?>,";
+        csvContent += "\"<?php echo esc_js($poll['question']); ?>\",";
+        csvContent += "\"<?php echo esc_js($poll['option_a']); ?>\",";
+        csvContent += "\"<?php echo esc_js($poll['option_b']); ?>\",";
+        csvContent += "<?php echo esc_js(($poll['is_contest'] ? 'Contest' : ($poll['is_weekly'] ? 'Weekly' : 'Regular'))); ?>,";
+        csvContent += "<?php echo esc_js(ucfirst($poll['status'])); ?>,";
+        csvContent += "<?php echo esc_js($poll_results['total_votes']); ?>,";
+        csvContent += "<?php echo esc_js(date('Y-m-d H:i:s', strtotime($poll['created_at']))); ?>\n";
+    <?php endforeach; ?>
     
-    function bindEventHandlers() {
-        // Select all checkbox
-        const selectAllCheckbox = document.querySelector('.select-all');
-        if (selectAllCheckbox) {
-            selectAllCheckbox.addEventListener('change', function() {
-                const checkboxes = document.querySelectorAll('.poll-checkbox');
-                checkboxes.forEach(checkbox => {
-                    checkbox.checked = this.checked;
-                    updateRowSelection(checkbox);
-                });
-                updateBulkActionInfo();
-            });
-        }
-        
-        // Individual checkboxes
-        document.addEventListener('change', function(e) {
-            if (e.target.matches('.poll-checkbox')) {
-                updateRowSelection(e.target);
-                updateBulkActionInfo();
-                updateSelectAllCheckbox();
-            }
-        });
-        
-        // Delete poll buttons
-        document.addEventListener('click', function(e) {
-            if (e.target.closest('.delete-poll')) {
-                e.preventDefault();
-                const pollId = e.target.closest('.delete-poll').dataset.pollId;
-                deletePoll(pollId);
-            }
-            
-            // Preview poll buttons
-            if (e.target.closest('.preview')) {
-                e.preventDefault();
-                const pollId = e.target.closest('.preview').dataset.pollId;
-                previewPoll(pollId);
-            }
-            
-            // Announce winner buttons
-            if (e.target.closest('.announce-winner')) {
-                e.preventDefault();
-                const pollId = e.target.closest('.announce-winner').dataset.pollId;
-                announceWinner(pollId);
-            }
-            
-            // Modal close
-            if (e.target.closest('.modal-close') || e.target.closest('[data-action="close-modal"]')) {
-                e.preventDefault();
-                closeModal();
-            }
-            
-            // Modal overlay click
-            if (e.target.classList.contains('modal-overlay')) {
-                closeModal();
-            }
-            
-            // Export polls
-            if (e.target.closest('[data-action="export-polls"]')) {
-                e.preventDefault();
-                exportPolls();
-            }
-        });
-        
-        // Search input with debounce
-        let searchTimeout;
-        document.addEventListener('input', function(e) {
-            if (e.target.matches('.search-input')) {
-                clearTimeout(searchTimeout);
-                searchTimeout = setTimeout(function() {
-                    if (e.target.value.length >= 3 || e.target.value.length === 0) {
-                        e.target.closest('form').submit();
-                    }
-                }, 500);
-            }
-        });
-        
-        // Filter selects auto-submit
-        document.addEventListener('change', function(e) {
-            if (e.target.matches('.filter-select')) {
-                e.target.closest('form').submit();
-            }
-        });
-    }
-    
-    function updateRowSelection(checkbox) {
-        const row = checkbox.closest('.poll-row');
-        if (checkbox.checked) {
-            row.classList.add('selected');
-        } else {
-            row.classList.remove('selected');
-        }
-    }
-    
-    function updateBulkActionInfo() {
-        const selectedCheckboxes = document.querySelectorAll('.poll-checkbox:checked');
-        const countElement = document.querySelector('.selected-count');
-        if (countElement) {
-            countElement.textContent = selectedCheckboxes.length;
-        }
-    }
-    
-    function updateSelectAllCheckbox() {
-        const selectAllCheckbox = document.querySelector('.select-all');
-        const checkboxes = document.querySelectorAll('.poll-checkbox');
-        const checkedCheckboxes = document.querySelectorAll('.poll-checkbox:checked');
-        
-        if (selectAllCheckbox) {
-            if (checkedCheckboxes.length === 0) {
-                selectAllCheckbox.checked = false;
-                selectAllCheckbox.indeterminate = false;
-            } else if (checkedCheckboxes.length === checkboxes.length) {
-                selectAllCheckbox.checked = true;
-                selectAllCheckbox.indeterminate = false;
-            } else {
-                selectAllCheckbox.checked = false;
-                selectAllCheckbox.indeterminate = true;
-            }
-        }
-    }
-    
-    function deletePoll(pollId) {
-        if (confirm('Are you sure you want to delete this poll? This action cannot be undone.')) {
-            fetch(ajaxurl, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/x-www-form-urlencoded',
-                },
-                body: new URLSearchParams({
-                    action: 'pollmaster_delete_poll',
-                    poll_id: pollId,
-                    nonce: pollmaster_admin.nonce
-                })
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    location.reload();
-                } else {
-                    alert('Error deleting poll: ' + data.data);
-                }
-            })
-            .catch(error => {
-                alert('Error deleting poll');
-            });
-        }
-    }
-    
-    function previewPoll(pollId) {
-        const modal = document.getElementById('poll-preview-modal');
-        const content = document.getElementById('poll-preview-content');
-        
-        // Show modal
-        modal.style.display = 'flex';
-        document.body.style.overflow = 'hidden';
-        
-        // Load poll preview via AJAX
-        fetch(ajaxurl, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/x-www-form-urlencoded',
-            },
-            body: new URLSearchParams({
-                action: 'pollmaster_preview_poll',
-                poll_id: pollId,
-                nonce: pollmaster_admin.nonce
-            })
-        })
-        .then(response => response.json())
-        .then(data => {
-            if (data.success) {
-                content.innerHTML = data.data.html;
-                // Store poll ID for edit button
-                document.querySelector('[data-action="edit-poll"]').dataset.pollId = pollId;
-            } else {
-                content.innerHTML = '<p class="error">Failed to load poll preview.</p>';
-            }
-        })
-        .catch(error => {
-            content.innerHTML = '<p class="error">Error loading poll preview.</p>';
-        });
-    }
-    
-    function announceWinner(pollId) {
-        if (confirm('Are you sure you want to announce the winner for this contest? This action cannot be undone.')) {
-            fetch(ajaxurl, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/x-www-form-urlencoded',
-                },
-                body: new URLSearchParams({
-                    action: 'pollmaster_announce_winner',
-                    poll_id: pollId,
-                    nonce: pollmaster_admin.nonce
-                })
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    alert('Winner announced successfully!');
-                    location.reload();
-                } else {
-                    alert('Error announcing winner: ' + data.data);
-                }
-            })
-            .catch(error => {
-                alert('Error announcing winner');
-            });
-        }
-    }
-    
-    function exportPolls() {
-        window.location.href = 'admin.php?page=pollmaster-export&action=export-polls';
-    }
-    
-    function closeModal() {
-        const modal = document.getElementById('poll-preview-modal');
-        modal.style.display = 'none';
-        document.body.style.overflow = '';
-    }
-    
-    // Handle escape key to close modal
-    document.addEventListener('keydown', function(e) {
-        if (e.key === 'Escape') {
-            closeModal();
-        }
+    // Create download link
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", "polls_export_" + new Date().toISOString().slice(0,10) + ".csv");
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+}
+
+// Checkbox functionality
+jQuery(document).ready(function($) {
+    // Select all checkboxes
+    $('#select-all').on('change', function() {
+        const isChecked = $(this).is(':checked');
+        $('.poll-checkbox').prop('checked', isChecked);
     });
     
-    // Handle edit poll button in modal
-    document.addEventListener('click', function(e) {
-        if (e.target.closest('[data-action="edit-poll"]')) {
-            const pollId = e.target.closest('[data-action="edit-poll"]').dataset.pollId;
-            if (pollId) {
-                window.location.href = `admin.php?page=pollmaster-edit-poll&poll_id=${pollId}`;
+    // Update select all when individual checkboxes change
+    $(document).on('change', '.poll-checkbox', function() {
+        const totalCheckboxes = $('.poll-checkbox').length;
+        const checkedCheckboxes = $('.poll-checkbox:checked').length;
+        
+        $('#select-all').prop('checked', totalCheckboxes === checkedCheckboxes);
+    });
+    
+    // Bulk actions functionality
+    $('form').on('submit', function(e) {
+        const selectedPolls = $('.poll-checkbox:checked').length;
+        const bulkAction = $('select[name="bulk_action"]').val();
+        
+        if (bulkAction !== '-1' && selectedPolls === 0) {
+            e.preventDefault();
+            alert('Please select at least one poll to perform bulk actions.');
+            return false;
+        }
+        
+        if (bulkAction === 'delete' && selectedPolls > 0) {
+            if (!confirm('Are you sure you want to delete the selected polls? This action cannot be undone.')) {
+                e.preventDefault();
+                return false;
             }
         }
     });

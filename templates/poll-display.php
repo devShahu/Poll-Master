@@ -38,7 +38,7 @@ $options = json_decode($poll['options'], true) ?: [];
         <div class="pollmaster-poll-image">
             <img src="<?php echo esc_url($poll_image); ?>" alt="<?php echo esc_attr($poll['title']); ?>" />
             <div class="pollmaster-contest-badge">
-                <span class="contest-icon">🏆</span>
+                <img src="<?php echo plugins_url('/assets/images/trophy-icon.svg', POLLMASTER_PLUGIN_FILE); ?>" alt="Trophy" class="contest-icon" style="width: 16px; height: 16px;">
                 Contest
             </div>
         </div>
@@ -54,7 +54,7 @@ $options = json_decode($poll['options'], true) ?: [];
         <div class="pollmaster-poll-meta">
             <?php if ($is_contest): ?>
                 <span class="pollmaster-meta-item contest">
-                    <span class="meta-icon">🏆</span>
+                    <img src="<?php echo plugins_url('/assets/images/trophy-icon.svg', POLLMASTER_PLUGIN_FILE); ?>" alt="Trophy" class="meta-icon" style="width: 16px; height: 16px;">
                     Photo Contest
                 </span>
             <?php endif; ?>
@@ -134,7 +134,7 @@ $options = json_decode($poll['options'], true) ?: [];
                 <?php if ($is_contest && $total_votes > 0): ?>
                     <div class="pollmaster-contest-info">
                         <p class="contest-description">
-                            <span class="contest-icon">🎯</span>
+                            <img src="<?php echo plugins_url('/assets/images/target-icon.svg', POLLMASTER_PLUGIN_FILE); ?>" alt="Target" class="contest-icon" style="width: 16px; height: 16px;">
                             Winner will be randomly selected from the most voted option!
                         </p>
                     </div>
@@ -204,27 +204,27 @@ $options = json_decode($poll['options'], true) ?: [];
                 <span class="share-label">Share this poll:</span>
                 <div class="pollmaster-share-buttons">
                     <button class="pollmaster-share-button facebook" data-platform="facebook" data-poll-id="<?php echo esc_attr($poll_id); ?>" title="Share on Facebook">
-                        <span class="share-icon">📘</span>
+                        <img src="<?php echo plugins_url('/assets/images/facebook-icon.svg', POLLMASTER_PLUGIN_FILE); ?>" alt="Facebook" class="share-icon">
                         <span class="share-text">Facebook</span>
                     </button>
                     
                     <button class="pollmaster-share-button twitter" data-platform="twitter" data-poll-id="<?php echo esc_attr($poll_id); ?>" title="Share on Twitter">
-                        <span class="share-icon">🐦</span>
+                        <img src="<?php echo plugins_url('/assets/images/twitter-icon.svg', POLLMASTER_PLUGIN_FILE); ?>" alt="Twitter" class="share-icon">
                         <span class="share-text">Twitter</span>
                     </button>
                     
                     <button class="pollmaster-share-button whatsapp" data-platform="whatsapp" data-poll-id="<?php echo esc_attr($poll_id); ?>" title="Share on WhatsApp">
-                        <span class="share-icon">💬</span>
+                        <img src="<?php echo plugins_url('/assets/images/whatsapp-icon.svg', POLLMASTER_PLUGIN_FILE); ?>" alt="WhatsApp" class="share-icon">
                         <span class="share-text">WhatsApp</span>
                     </button>
                     
                     <button class="pollmaster-share-button linkedin" data-platform="linkedin" data-poll-id="<?php echo esc_attr($poll_id); ?>" title="Share on LinkedIn">
-                        <span class="share-icon">💼</span>
+                        <img src="<?php echo plugins_url('/assets/images/linkedin-icon.svg', POLLMASTER_PLUGIN_FILE); ?>" alt="LinkedIn" class="share-icon">
                         <span class="share-text">LinkedIn</span>
                     </button>
                     
                     <button class="pollmaster-share-button copy" data-action="copy-link" data-poll-id="<?php echo esc_attr($poll_id); ?>" title="Copy Link">
-                        <span class="share-icon">🔗</span>
+                        <img src="<?php echo plugins_url('/assets/images/copy-icon.svg', POLLMASTER_PLUGIN_FILE); ?>" alt="Copy Link" class="share-icon">
                         <span class="share-text">Copy Link</span>
                     </button>
                 </div>

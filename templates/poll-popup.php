@@ -51,7 +51,7 @@ $has_voted = $user_vote !== null;
             <div class="pollmaster-popup-header">
                 <?php if ($is_contest): ?>
                     <div class="popup-badge contest">
-                        <span class="badge-icon">🏆</span>
+                        <img src="<?php echo plugins_url('/assets/images/trophy-icon.svg', POLLMASTER_PLUGIN_FILE); ?>" alt="Trophy" class="badge-icon" style="width: 16px; height: 16px;">
                         <span class="badge-text">Contest</span>
                     </div>
                 <?php endif; ?>
@@ -74,7 +74,7 @@ $has_voted = $user_vote !== null;
                     <img src="<?php echo esc_url($poll_image); ?>" alt="<?php echo esc_attr($poll['title']); ?>" />
                     <div class="image-overlay">
                         <div class="contest-label">
-                            <span class="contest-icon">🏆</span>
+                            <img src="<?php echo plugins_url('/assets/images/trophy-icon.svg', POLLMASTER_PLUGIN_FILE); ?>" alt="Trophy" class="contest-icon" style="width: 16px; height: 16px;">
                             Photo Contest
                         </div>
                     </div>
@@ -121,7 +121,7 @@ $has_voted = $user_vote !== null;
                                     <span class="success-icon">✅</span>
                                     Thank you for voting!
                                 <?php else: ?>
-                                    <span class="info-icon">📊</span>
+                                    <img src="<?php echo plugins_url('/assets/images/chart-icon.svg', POLLMASTER_PLUGIN_FILE); ?>" alt="Chart" class="info-icon" style="width: 16px; height: 16px;">
                                     Final Results
                                 <?php endif; ?>
                             </h3>
@@ -163,7 +163,7 @@ $has_voted = $user_vote !== null;
                             <?php if ($is_contest && $total_votes > 0): ?>
                                 <div class="contest-info">
                                     <div class="contest-message">
-                                        <span class="contest-icon">🎯</span>
+                                        <img src="<?php echo plugins_url('/assets/images/target-icon.svg', POLLMASTER_PLUGIN_FILE); ?>" alt="Target" class="contest-icon" style="width: 16px; height: 16px;">
                                         <p>Winner will be randomly selected from the most voted option!</p>
                                     </div>
                                 </div>
@@ -215,7 +215,7 @@ $has_voted = $user_vote !== null;
                                         </button>
                                         
                                         <button type="button" class="popup-results-button" data-action="show-results">
-                                            <span class="button-icon">📊</span>
+                                            <img src="<?php echo plugins_url('/assets/images/chart-icon.svg', POLLMASTER_PLUGIN_FILE); ?>" alt="Chart" class="button-icon" style="width: 16px; height: 16px;">
                                             <span class="button-text">View Results</span>
                                         </button>
                                     </div>
@@ -251,19 +251,19 @@ $has_voted = $user_vote !== null;
                         <span class="share-label">Share:</span>
                         <div class="popup-share-buttons">
                             <button class="popup-share-button facebook" data-platform="facebook" data-poll-id="<?php echo esc_attr($poll_id); ?>" title="Share on Facebook">
-                                <span class="share-icon">📘</span>
+                                <img src="<?php echo plugins_url('/assets/images/facebook-icon.svg', POLLMASTER_PLUGIN_FILE); ?>" alt="Facebook" class="share-icon">
                             </button>
                             
                             <button class="popup-share-button twitter" data-platform="twitter" data-poll-id="<?php echo esc_attr($poll_id); ?>" title="Share on Twitter">
-                                <span class="share-icon">🐦</span>
+                                <img src="<?php echo plugins_url('/assets/images/twitter-icon.svg', POLLMASTER_PLUGIN_FILE); ?>" alt="Twitter" class="share-icon">
                             </button>
                             
                             <button class="popup-share-button whatsapp" data-platform="whatsapp" data-poll-id="<?php echo esc_attr($poll_id); ?>" title="Share on WhatsApp">
-                                <span class="share-icon">💬</span>
+                                <img src="<?php echo plugins_url('/assets/images/whatsapp-icon.svg', POLLMASTER_PLUGIN_FILE); ?>" alt="WhatsApp" class="share-icon">
                             </button>
                             
                             <button class="popup-share-button copy" data-action="copy-link" data-poll-id="<?php echo esc_attr($poll_id); ?>" title="Copy Link">
-                                <span class="share-icon">🔗</span>
+                                <img src="<?php echo plugins_url('/assets/images/copy-icon.svg', POLLMASTER_PLUGIN_FILE); ?>" alt="Copy Link" class="share-icon">
                             </button>
                         </div>
                     </div>

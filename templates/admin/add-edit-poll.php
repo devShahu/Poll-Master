@@ -21,12 +21,12 @@ $database = new PollMaster_Database();
 $poll_data = null;
 
 if ($is_editing) {
-    $poll_data = $database->get_poll($poll_id);
+    $poll_data = $database->get_poll_admin($poll_id);
     if (!$poll_data) {
         wp_die('Poll not found.');
     }
 } elseif ($is_duplicating) {
-    $poll_data = $database->get_poll($duplicate_id);
+    $poll_data = $database->get_poll_admin($duplicate_id);
     if (!$poll_data) {
         wp_die('Poll to duplicate not found.');
     }
@@ -56,6 +56,19 @@ $defaults = [
 
 // Merge with existing data
 if ($poll_data) {
+    // Convert stdClass object to array if needed
+    if (is_object($poll_data)) {
+        $poll_data = (array) $poll_data;
+    }
+    
+    // Map database fields to form fields
+    if (isset($poll_data['question'])) {
+        $poll_data['title'] = $poll_data['question'];
+    }
+    if (isset($poll_data['contest_end_date'])) {
+        $poll_data['end_date'] = $poll_data['contest_end_date'];
+    }
+    
     $poll_data = array_merge($defaults, $poll_data);
     if (!empty($poll_data['options']) && is_string($poll_data['options'])) {
         $poll_data['options'] = json_decode($poll_data['options'], true) ?: ['', ''];
@@ -64,32 +77,33 @@ if ($poll_data) {
     $poll_data = $defaults;
 }
 
-// Handle form submission
+// Handle form submission - moved to top to prevent header issues
 if ($_POST && wp_verify_nonce($_POST['_wpnonce'], 'pollmaster_save_poll')) {
+    // Get and sanitize options
+    $options = isset($_POST['options']) ? array_filter(array_map('sanitize_text_field', $_POST['options'])) : [];
+    
     $form_data = [
-        'title' => sanitize_text_field($_POST['title']),
-        'description' => sanitize_textarea_field($_POST['description']),
-        'options' => array_filter(array_map('sanitize_text_field', $_POST['options'])),
-        'image_url' => esc_url_raw($_POST['image_url']),
-        'end_date' => sanitize_text_field($_POST['end_date']),
+        'user_id' => get_current_user_id(),
+        'question' => sanitize_text_field($_POST['title'] ?? ''),
+        'option_a' => isset($options[0]) ? $options[0] : '',
+        'option_b' => isset($options[1]) ? $options[1] : '',
+        'description' => sanitize_textarea_field($_POST['description'] ?? ''),
+        'image_url' => esc_url_raw($_POST['image_url'] ?? ''),
+        'contest_end_date' => !empty($_POST['end_date']) ? sanitize_text_field($_POST['end_date']) : null,
         'is_contest' => isset($_POST['is_contest']) ? 1 : 0,
-        'contest_prize' => sanitize_text_field($_POST['contest_prize']),
-        'contest_description' => sanitize_textarea_field($_POST['contest_description']),
+        'contest_prize' => sanitize_text_field($_POST['contest_prize'] ?? ''),
         'is_weekly' => isset($_POST['is_weekly']) ? 1 : 0,
-        'allow_multiple_votes' => isset($_POST['allow_multiple_votes']) ? 1 : 0,
-        'require_login' => isset($_POST['require_login']) ? 1 : 0,
-        'show_results_before_voting' => isset($_POST['show_results_before_voting']) ? 1 : 0,
-        'status' => sanitize_text_field($_POST['status'])
+        'status' => sanitize_text_field($_POST['status'] ?? 'active')
     ];
     
     // Validation
     $errors = [];
     
-    if (empty($form_data['title'])) {
-        $errors[] = 'Poll title is required.';
+    if (empty($form_data['question'])) {
+        $errors[] = 'Poll question is required.';
     }
     
-    if (count($form_data['options']) < 2) {
+    if (empty($form_data['option_a']) || empty($form_data['option_b'])) {
         $errors[] = 'At least 2 poll options are required.';
     }
     
@@ -97,42 +111,44 @@ if ($_POST && wp_verify_nonce($_POST['_wpnonce'], 'pollmaster_save_poll')) {
         $errors[] = 'Contest prize is required for contest polls.';
     }
     
-    if (!empty($form_data['end_date'])) {
-        $end_timestamp = strtotime($form_data['end_date']);
+    if (!empty($form_data['contest_end_date'])) {
+        $end_timestamp = strtotime($form_data['contest_end_date']);
         if ($end_timestamp === false || $end_timestamp <= time()) {
             $errors[] = 'End date must be in the future.';
         }
     }
     
     if (empty($errors)) {
-        // Convert options to JSON
-        $form_data['options'] = json_encode($form_data['options']);
-        
         if ($is_editing) {
             // Update existing poll
             $result = $database->update_poll($poll_id, $form_data);
             if ($result !== false) {
-                $success_message = 'Poll updated successfully!';
-                $poll_data = array_merge($poll_data, $form_data);
+                // Use JavaScript redirect to avoid header issues
+                echo '<script>window.location.href = "' . admin_url('admin.php?page=pollmaster-edit-poll&poll_id=' . $poll_id . '&updated=1') . '";</script>';
+                exit;
             } else {
                 $errors[] = 'Failed to update poll.';
             }
         } else {
             // Create new poll
-            $form_data['created_by'] = get_current_user_id();
             $new_poll_id = $database->create_poll($form_data);
-            if ($new_poll_id) {
-                wp_redirect(admin_url('admin.php?page=pollmaster-edit-poll&poll_id=' . $new_poll_id . '&created=1'));
+            
+            if (is_wp_error($new_poll_id)) {
+                $errors[] = 'Failed to create poll: ' . $new_poll_id->get_error_message();
+            } elseif ($new_poll_id) {
+                // Use JavaScript redirect to avoid header issues
+                echo '<script>window.location.href = "' . admin_url('admin.php?page=pollmaster-edit-poll&poll_id=' . $new_poll_id . '&created=1') . '";</script>';
                 exit;
             } else {
-                $errors[] = 'Failed to create poll.';
+                $errors[] = 'Failed to create poll: Unknown error occurred.';
             }
         }
     }
 }
 
-// Check for creation success message
+// Check for success messages
 $created = isset($_GET['created']) && $_GET['created'] == '1';
+$updated = isset($_GET['updated']) && $_GET['updated'] == '1';
 
 ?>
 
@@ -170,6 +186,12 @@ $created = isset($_GET['created']) && $_GET['created'] == '1';
     <?php if ($created): ?>
         <div class="notice notice-success is-dismissible">
             <p><strong>Success!</strong> Poll created successfully. You can now configure additional settings below.</p>
+        </div>
+    <?php endif; ?>
+    
+    <?php if ($updated): ?>
+        <div class="notice notice-success is-dismissible">
+            <p><strong>Success!</strong> Poll updated successfully.</p>
         </div>
     <?php endif; ?>
     
@@ -256,26 +278,42 @@ $created = isset($_GET['created']) && $_GET['created'] == '1';
                     
                     <div class="field-group">
                         <label for="image_url" class="field-label">Poll Image</label>
-                        <div class="image-upload-wrapper">
-                            <input type="url" id="image_url" name="image_url" class="field-input image-url-input" 
-                                   value="<?php echo esc_attr($poll_data['image_url']); ?>" 
-                                   placeholder="Enter image URL or upload...">
-                            <button type="button" class="upload-image button button-secondary">
-                                <span class="button-icon">📷</span>
-                                Upload Image
-                            </button>
+                        <div class="image-upload-container">
+                            <input type="hidden" id="image_url" name="image_url" 
+                                   value="<?php echo esc_attr($poll_data['image_url']); ?>">
+                            
+                            <div class="media-upload-wrapper">
+                                <div class="upload-area <?php echo !empty($poll_data['image_url']) ? 'has-image' : ''; ?>">
+                                    <?php if (!empty($poll_data['image_url'])): ?>
+                                        <div class="image-preview">
+                                            <img src="<?php echo esc_url($poll_data['image_url']); ?>" alt="Poll image preview" class="preview-image">
+                                            <div class="image-overlay">
+                                                <button type="button" class="btn-change-image" title="Change Image">
+                                                    <span class="dashicons dashicons-edit"></span>
+                                                </button>
+                                                <button type="button" class="btn-remove-image" title="Remove Image">
+                                                    <span class="dashicons dashicons-trash"></span>
+                                                </button>
+                                            </div>
+                                        </div>
+                                    <?php else: ?>
+                                        <div class="upload-placeholder">
+                                            <div class="upload-icon">
+                                                <span class="dashicons dashicons-cloud-upload"></span>
+                                            </div>
+                                            <h4>Add Poll Image</h4>
+                                            <p>Click to upload or drag and drop</p>
+                                            <button type="button" class="button button-primary btn-upload-image">
+                                                <span class="dashicons dashicons-upload"></span>
+                                                Choose Image
+                                            </button>
+                                        </div>
+                                    <?php endif; ?>
+                                </div>
+                            </div>
                         </div>
                         
-                        <?php if (!empty($poll_data['image_url'])): ?>
-                            <div class="image-preview">
-                                <img src="<?php echo esc_url($poll_data['image_url']); ?>" alt="Poll image preview" class="preview-image">
-                                <button type="button" class="remove-image" title="Remove image">
-                                    <span class="button-icon">❌</span>
-                                </button>
-                            </div>
-                        <?php endif; ?>
-                        
-                        <p class="field-help">Optional image to display with your poll. Recommended size: 800x400px.</p>
+                        <p class="field-help">Add an image to make your poll more engaging. Recommended size: 800x400px. Supports JPG, PNG, GIF formats.</p>
                     </div>
                 </div>
             </div>
@@ -703,62 +741,126 @@ $created = isset($_GET['created']) && $_GET['created'] == '1';
 }
 
 /* Image Upload */
-.image-upload-wrapper {
+.media-upload-wrapper {
+    border: 2px dashed #ddd;
+    border-radius: 12px;
+    transition: all 0.3s ease;
+}
+
+.media-upload-wrapper:hover {
+    border-color: #0073aa;
+    background-color: #f8f9fa;
+}
+
+.upload-area {
+    position: relative;
+    min-height: 200px;
     display: flex;
-    gap: 10px;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+}
+
+.upload-area.has-image {
+    min-height: auto;
+    padding: 0;
+}
+
+.upload-placeholder {
+    text-align: center;
+    color: #666;
+}
+
+.upload-icon {
+    font-size: 48px;
+    color: #0073aa;
     margin-bottom: 15px;
 }
 
-.image-url-input {
-    flex: 1;
+.upload-placeholder h4 {
+    margin: 10px 0 5px;
+    font-size: 18px;
+    color: #333;
 }
 
-.upload-image {
-    background: #3498db;
-    color: white;
-    border: none;
-    white-space: nowrap;
+.upload-placeholder p {
+    margin: 0 0 20px;
+    color: #666;
+    font-size: 14px;
 }
 
-.upload-image:hover {
-    background: #2980b9;
+.btn-upload-image {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
 }
 
 .image-preview {
     position: relative;
-    display: inline-block;
-    margin-top: 15px;
-    border-radius: 8px;
+    display: block;
+    border-radius: 12px;
     overflow: hidden;
-    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
 }
 
 .preview-image {
-    max-width: 300px;
-    max-height: 200px;
+    width: 100%;
+    height: auto;
+    max-height: 300px;
+    object-fit: cover;
     display: block;
 }
 
-.remove-image {
+.image-overlay {
     position: absolute;
-    top: 8px;
-    right: 8px;
-    background: rgba(231, 76, 60, 0.9);
-    color: white;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.7);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+}
+
+.image-preview:hover .image-overlay {
+    opacity: 1;
+}
+
+.btn-change-image,
+.btn-remove-image {
+    background: rgba(255, 255, 255, 0.9);
     border: none;
-    width: 28px;
-    height: 28px;
     border-radius: 50%;
+    width: 40px;
+    height: 40px;
     cursor: pointer;
     display: flex;
     align-items: center;
     justify-content: center;
-    transition: all 0.3s ease;
+    transition: all 0.2s ease;
+    color: #333;
 }
 
-.remove-image:hover {
-    background: #e74c3c;
+.btn-change-image:hover {
+    background: #0073aa;
+    color: white;
     transform: scale(1.1);
+}
+
+.btn-remove-image:hover {
+    background: #dc3545;
+    color: white;
+    transform: scale(1.1);
+}
+
+.btn-change-image .dashicons,
+.btn-remove-image .dashicons {
+    font-size: 16px;
+    width: 16px;
+    height: 16px;
 }
 
 /* Settings Grid */
@@ -1243,6 +1345,25 @@ document.addEventListener('DOMContentLoaded', function() {
                 setImage(attachment.url);
             });
         }
+        
+        // Add event listeners for new media uploader buttons
+        document.addEventListener('click', function(e) {
+            if (e.target.matches('.btn-upload-image, .btn-change-image') || e.target.closest('.btn-upload-image, .btn-change-image')) {
+                e.preventDefault();
+                openMediaUploader();
+            }
+            
+            if (e.target.matches('.btn-remove-image') || e.target.closest('.btn-remove-image')) {
+                e.preventDefault();
+                removeImage();
+            }
+            
+            // Handle clicks on upload placeholder
+            if (e.target.matches('.upload-placeholder, .upload-placeholder *')) {
+                e.preventDefault();
+                openMediaUploader();
+            }
+        });
     }
     
     function openMediaUploader() {
@@ -1259,41 +1380,48 @@ document.addEventListener('DOMContentLoaded', function() {
     
     function setImage(url) {
         const imageInput = document.getElementById('image_url');
+        const uploadArea = document.querySelector('.upload-area');
+        
         imageInput.value = url;
         
-        // Update preview
-        updateImagePreview(url);
-    }
-    
-    function updateImagePreview(url) {
-        const existingPreview = document.querySelector('.image-preview');
-        if (existingPreview) {
-            existingPreview.remove();
-        }
-        
-        if (url) {
-            const previewHtml = `
-                <div class="image-preview">
-                    <img src="${url}" alt="Poll image preview" class="preview-image">
-                    <button type="button" class="remove-image" title="Remove image">
-                        <span class="button-icon">❌</span>
+        // Update the upload area with image preview
+        uploadArea.classList.add('has-image');
+        uploadArea.innerHTML = `
+            <div class="image-preview">
+                <img src="${url}" alt="Poll image preview" class="preview-image">
+                <div class="image-overlay">
+                    <button type="button" class="btn-change-image" title="Change Image">
+                        <span class="dashicons dashicons-edit"></span>
+                    </button>
+                    <button type="button" class="btn-remove-image" title="Remove Image">
+                        <span class="dashicons dashicons-trash"></span>
                     </button>
                 </div>
-            `;
-            
-            const uploadWrapper = document.querySelector('.image-upload-wrapper');
-            uploadWrapper.insertAdjacentHTML('afterend', previewHtml);
-        }
+            </div>
+        `;
     }
     
     function removeImage() {
         const imageInput = document.getElementById('image_url');
-        const imagePreview = document.querySelector('.image-preview');
+        const uploadArea = document.querySelector('.upload-area');
         
         imageInput.value = '';
-        if (imagePreview) {
-            imagePreview.remove();
-        }
+        
+        // Reset to upload placeholder
+        uploadArea.classList.remove('has-image');
+        uploadArea.innerHTML = `
+            <div class="upload-placeholder">
+                <div class="upload-icon">
+                    <span class="dashicons dashicons-cloud-upload"></span>
+                </div>
+                <h4>Add Poll Image</h4>
+                <p>Click to upload or drag and drop</p>
+                <button type="button" class="button button-primary btn-upload-image">
+                    <span class="dashicons dashicons-upload"></span>
+                    Choose Image
+                </button>
+            </div>
+        `;
     }
     
     function toggleContestFields(show) {
@@ -1329,6 +1457,8 @@ document.addEventListener('DOMContentLoaded', function() {
         const title = document.getElementById('title').value.trim();
         if (!title) {
             errors.push('Poll title is required.');
+        } else if (title.length < 5) {
+            errors.push('Poll title must be at least 5 characters long.');
         }
         
         // Check options
@@ -1340,10 +1470,23 @@ document.addEventListener('DOMContentLoaded', function() {
             errors.push('At least 2 poll options are required.');
         }
         
+        // Check for empty options
+        const allOptionInputs = document.querySelectorAll('.option-input');
+        let hasEmptyOption = false;
+        allOptionInputs.forEach((input, index) => {
+            if (index < 2 && !input.value.trim()) { // First two options are required
+                hasEmptyOption = true;
+            }
+        });
+        
+        if (hasEmptyOption) {
+            errors.push('The first two poll options cannot be empty.');
+        }
+        
         // Check contest fields
-        const isContest = document.querySelector('.contest-checkbox').checked;
+        const isContest = document.querySelector('.contest-checkbox')?.checked;
         if (isContest) {
-            const prize = document.getElementById('contest_prize').value.trim();
+            const prize = document.getElementById('contest_prize')?.value.trim();
             if (!prize) {
                 errors.push('Contest prize is required for contest polls.');
             }
@@ -1360,11 +1503,40 @@ document.addEventListener('DOMContentLoaded', function() {
         }
         
         if (errors.length > 0) {
-            alert('Please fix the following errors:\n\n' + errors.join('\n'));
+            // Create a better error display
+            showValidationErrors(errors);
             return false;
         }
         
         return true;
+    }
+    
+    function showValidationErrors(errors) {
+        // Remove existing error notices
+        const existingNotices = document.querySelectorAll('.validation-notice');
+        existingNotices.forEach(notice => notice.remove());
+        
+        // Create new error notice
+        const errorHtml = `
+            <div class="notice notice-error validation-notice">
+                <p><strong>Please fix the following errors:</strong></p>
+                <ul>
+                    ${errors.map(error => `<li>${error}</li>`).join('')}
+                </ul>
+            </div>
+        `;
+        
+        // Insert after the page header
+        const pageHeader = document.querySelector('.page-header');
+        if (pageHeader) {
+            pageHeader.insertAdjacentHTML('afterend', errorHtml);
+            
+            // Scroll to the error notice
+            const errorNotice = document.querySelector('.validation-notice');
+            if (errorNotice) {
+                errorNotice.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+        }
     }
     
     function previewPoll(pollId) {
@@ -1420,6 +1592,53 @@ document.addEventListener('DOMContentLoaded', function() {
     if (contestCheckbox) {
         toggleContestFields(contestCheckbox.checked);
     }
+    
+    // Add form validation on submit
+    const pollForm = document.querySelector('.poll-form');
+    if (pollForm) {
+        pollForm.addEventListener('submit', function(e) {
+            if (!validateForm()) {
+                e.preventDefault();
+                return false;
+            }
+        });
+    }
+    
+    // Real-time validation feedback
+    document.addEventListener('input', function(e) {
+        if (e.target.matches('#title')) {
+            const title = e.target.value.trim();
+            const titleGroup = e.target.closest('.field-group');
+            const existingError = titleGroup.querySelector('.field-error');
+            
+            if (existingError) {
+                existingError.remove();
+            }
+            
+            if (title && title.length < 5) {
+                const errorMsg = document.createElement('p');
+                errorMsg.className = 'field-error';
+                errorMsg.style.color = '#d63638';
+                errorMsg.style.fontSize = '12px';
+                errorMsg.style.marginTop = '4px';
+                errorMsg.textContent = 'Title must be at least 5 characters long.';
+                e.target.parentNode.appendChild(errorMsg);
+            }
+        }
+        
+        if (e.target.matches('.option-input')) {
+            const optionInputs = document.querySelectorAll('.option-input');
+            const filledOptions = Array.from(optionInputs).filter(input => input.value.trim()).length;
+            
+            // Update option numbers
+            optionInputs.forEach((input, index) => {
+                const numberSpan = input.parentNode.querySelector('.option-number');
+                if (numberSpan) {
+                    numberSpan.textContent = index + 1;
+                }
+            });
+        }
+    });
     
     // Image URL input change handler
     document.addEventListener('input', function(e) {

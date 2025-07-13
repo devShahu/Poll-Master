@@ -1,16 +1,18 @@
 /**
  * PollMaster Frontend Styles
  * 
- * Main stylesheet for the PollMaster plugin frontend
+ * Main stylesheet for the PollMaster plugin frontend with DaisyUI integration
  */
+
+/* Import DaisyUI and Tailwind CSS */
+@import 'https://cdn.jsdelivr.net/npm/daisyui@4.4.19/dist/full.min.css';
+@import 'https://cdn.jsdelivr.net/npm/tailwindcss@3.3.6/dist/tailwind.min.css';
 
 /* Reset and Base Styles */
 .pollmaster-popup-container *,
 .pollmaster-poll-embed *,
 .pollmaster-contest-embed * {
     box-sizing: border-box;
-    margin: 0;
-    padding: 0;
 }
 
 /* Popup Container */
@@ -29,24 +31,24 @@
 }
 
 .pollmaster-popup-overlay {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background-color: rgba(0, 0, 0, 0.7);
-    backdrop-filter: blur(2px);
+    @apply fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4;
+    backdrop-filter: blur(4px);
 }
 
 .pollmaster-popup-content {
-    position: relative;
-    background: #ffffff;
-    border-radius: 12px;
-    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
-    max-width: 90vw;
-    max-height: 90vh;
-    overflow-y: auto;
-    animation: pollmaster-popup-enter 0.3s ease-out;
+    @apply bg-white rounded-xl shadow-2xl max-w-lg w-full relative;
+    animation: slideIn 0.3s ease-out;
+}
+
+@keyframes slideIn {
+    from {
+        opacity: 0;
+        transform: translateY(-20px) scale(0.95);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
 }
 
 @keyframes pollmaster-popup-enter {
@@ -73,27 +75,9 @@
 
 /* Close Button */
 .pollmaster-popup-close {
-    position: absolute;
-    top: 15px;
-    right: 15px;
-    background: none;
+    @apply absolute top-4 right-4 w-8 h-8 flex items-center justify-content center rounded-full bg-gray-100 hover:bg-gray-200 transition-colors duration-200 text-gray-600 hover:text-gray-800;
     border: none;
-    font-size: 24px;
-    color: #666;
     cursor: pointer;
-    width: 30px;
-    height: 30px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: 50%;
-    transition: all 0.2s ease;
-    z-index: 10;
-}
-
-.pollmaster-popup-close:hover {
-    background-color: #f0f0f0;
-    color: #333;
 }
 
 .pollmaster-popup-close:focus {
@@ -103,47 +87,30 @@
 
 /* Popup Inner Content */
 .pollmaster-popup-inner {
-    padding: 30px;
+    @apply p-6;
 }
 
-/* Poll Voting Styles */
+/* Poll Voting Styles - Tailwind Enhanced */
 .pollmaster-poll-voting,
 .pollmaster-poll-results {
     text-align: center;
 }
 
 .pollmaster-contest-badge {
-    display: inline-block;
-    background: linear-gradient(135deg, #ff6b6b, #ee5a24);
-    color: white;
-    padding: 6px 12px;
-    border-radius: 20px;
-    font-size: 12px;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    margin-bottom: 15px;
-    box-shadow: 0 2px 8px rgba(238, 90, 36, 0.3);
+    @apply badge badge-secondary badge-lg px-4 py-3 text-white font-bold uppercase tracking-wide shadow-lg mb-4;
+    background: linear-gradient(135deg, #8b5cf6, #6366f1);
 }
 
 .pollmaster-poll-question {
-    font-size: 24px;
-    font-weight: 700;
-    color: #2c3e50;
-    margin-bottom: 20px;
-    line-height: 1.3;
+    @apply text-2xl md:text-3xl font-bold text-gray-800 mb-6 leading-tight;
 }
 
 .pollmaster-poll-image {
-    margin: 20px 0;
-    border-radius: 8px;
-    overflow: hidden;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    @apply mb-6 text-center;
 }
 
 .pollmaster-poll-image img {
-    width: 100%;
-    height: auto;
+    @apply max-w-full h-auto rounded-lg shadow-lg mx-auto;
     max-height: 300px;
     object-fit: cover;
     display: block;
@@ -151,96 +118,35 @@
 
 /* Vote Options */
 .pollmaster-vote-options {
+    @apply space-y-3 mb-6;
     display: flex;
     flex-direction: column;
-    gap: 15px;
-    margin: 25px 0;
 }
 
 .pollmaster-vote-btn {
-    background: linear-gradient(135deg, #007cba, #005a87);
-    color: white;
-    border: none;
-    padding: 18px 24px;
-    border-radius: 8px;
-    font-size: 16px;
-    font-weight: 600;
-    cursor: pointer;
-    transition: all 0.3s ease;
-    position: relative;
-    overflow: hidden;
-    min-height: 60px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-}
-
-.pollmaster-vote-btn:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 8px 20px rgba(0, 124, 186, 0.3);
-}
-
-.pollmaster-vote-btn:active {
-    transform: translateY(0);
-}
-
-.pollmaster-vote-btn:focus {
-    outline: 3px solid rgba(0, 124, 186, 0.5);
-    outline-offset: 2px;
+    @apply btn btn-primary btn-lg w-full mb-3 min-h-16 text-lg font-semibold transition-all duration-300 hover:scale-105 hover:shadow-lg;
 }
 
 .pollmaster-vote-btn:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-    transform: none;
+    @apply btn-disabled opacity-60 cursor-not-allowed;
+    transform: none !important;
 }
 
-.pollmaster-vote-btn::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: -100%;
-    width: 100%;
-    height: 100%;
-    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
-    transition: left 0.5s;
-}
-
-.pollmaster-vote-btn:hover::before {
-    left: 100%;
+.pollmaster-vote-btn:focus {
+    @apply focus:outline-none focus:ring-4 focus:ring-primary focus:ring-opacity-50;
 }
 
 /* Login Notice */
 .pollmaster-login-notice {
-    background: #f8f9fa;
-    border: 2px solid #e9ecef;
-    border-radius: 8px;
-    padding: 20px;
-    margin: 20px 0;
-    text-align: center;
+    @apply alert alert-info my-6 text-center;
 }
 
 .pollmaster-login-notice p {
-    margin-bottom: 15px;
-    color: #6c757d;
-    font-size: 16px;
+    @apply mb-4 text-base;
 }
 
 .pollmaster-login-btn {
-    background: #28a745;
-    color: white;
-    text-decoration: none;
-    padding: 12px 24px;
-    border-radius: 6px;
-    font-weight: 600;
-    transition: background-color 0.2s ease;
-    display: inline-block;
-}
-
-.pollmaster-login-btn:hover {
-    background: #218838;
-    color: white;
-    text-decoration: none;
+    @apply btn btn-success btn-md font-semibold no-underline hover:no-underline;
 }
 
 /* Contest Info */
@@ -263,25 +169,15 @@
 
 /* Results Styles */
 .pollmaster-results-summary {
-    background: #f8f9fa;
-    border-radius: 6px;
-    padding: 15px;
-    margin: 20px 0;
-    font-weight: 600;
-    color: #495057;
+    @apply alert alert-success my-6 font-semibold;
 }
 
 .pollmaster-results-options {
-    margin: 25px 0;
+    @apply my-6 space-y-4;
 }
 
 .pollmaster-result-option {
-    margin-bottom: 20px;
-    background: #ffffff;
-    border: 1px solid #e9ecef;
-    border-radius: 8px;
-    padding: 20px;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+    @apply card bg-base-100 shadow-md p-6;
 }
 
 .pollmaster-option-header {
@@ -305,6 +201,46 @@
     align-items: center;
     font-size: 14px;
     color: #6c757d;
+    flex-wrap: wrap;
+}
+
+.pollmaster-share-image {
+    max-width: 100%;
+    height: auto;
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+    margin: 15px 0;
+}
+
+.pollmaster-share-buttons img {
+    width: 24px;
+    height: 24px;
+    vertical-align: middle;
+    margin-right: 8px;
+}
+
+.site-share-buttons.button-style-2,
+.pollmaster-share-buttons.button-style-2 {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    font-weight: 600;
+    border: 1px solid #dee2e6;
+    background: #f1f3f5;
+    color: #212529;
+    padding: 10px 15px;
+    border-radius: 20px;
+    transition: all 0.3s ease;
+}
+
+.site-share-buttons.button-style-2:hover,
+.pollmaster-share-buttons.button-style-2:hover {
+    background: #007cba;
+    color: #fff;
+    border-color: #007cba;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0,123,255,0.2);
+}
 }
 
 .pollmaster-vote-count {
@@ -324,79 +260,28 @@
 
 /* Progress Bar */
 .pollmaster-progress-bar {
-    width: 100%;
-    height: 12px;
-    background-color: #e9ecef;
-    border-radius: 6px;
-    overflow: hidden;
-    position: relative;
+    @apply w-full;
 }
 
 .pollmaster-progress-fill {
-    height: 100%;
-    background: linear-gradient(135deg, #007cba, #0056b3);
-    border-radius: 6px;
-    transition: width 0.8s ease-in-out;
-    position: relative;
-}
-
-.pollmaster-progress-fill::after {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: linear-gradient(45deg, transparent 30%, rgba(255, 255, 255, 0.2) 50%, transparent 70%);
-    animation: pollmaster-progress-shine 2s infinite;
-}
-
-@keyframes pollmaster-progress-shine {
-    0% { transform: translateX(-100%); }
-    100% { transform: translateX(100%); }
+    @apply progress progress-primary h-4 transition-all duration-700 ease-in-out;
 }
 
 /* Social Sharing */
 .pollmaster-share-section {
-    margin-top: 25px;
-    padding-top: 20px;
-    border-top: 1px solid #e9ecef;
+    @apply mt-6 pt-5 border-t border-base-300;
 }
 
 .pollmaster-share-label {
-    font-weight: 600;
-    color: #495057;
-    margin-bottom: 15px;
-    font-size: 14px;
+    @apply font-semibold text-base-content mb-4 text-sm;
 }
 
 .pollmaster-social-sharing {
-    display: flex;
-    justify-content: center;
-    gap: 12px;
-    flex-wrap: wrap;
+    @apply flex justify-center gap-3 flex-wrap;
 }
 
 .pollmaster-share-btn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 44px;
-    height: 44px;
-    border-radius: 50%;
-    color: white;
-    text-decoration: none;
-    font-size: 18px;
-    transition: all 0.3s ease;
-    border: none;
-    cursor: pointer;
-}
-
-.pollmaster-share-btn:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
-    color: white;
-    text-decoration: none;
+    @apply btn btn-circle btn-md text-white no-underline hover:no-underline transition-all duration-300 hover:scale-110 hover:shadow-lg;
 }
 
 .pollmaster-share-btn.facebook {
@@ -417,36 +302,15 @@
 
 /* Dismiss Section */
 .pollmaster-dismiss-section {
-    margin-top: 20px;
-    padding-top: 20px;
-    border-top: 1px solid #e9ecef;
-    display: flex;
-    justify-content: center;
-    gap: 15px;
-    flex-wrap: wrap;
+    @apply mt-5 pt-5 border-t border-base-300 flex justify-center gap-4 flex-wrap;
 }
 
 .pollmaster-dismiss-btn {
-    background: #6c757d;
-    color: white;
-    border: none;
-    padding: 10px 20px;
-    border-radius: 6px;
-    font-size: 14px;
-    cursor: pointer;
-    transition: background-color 0.2s ease;
-}
-
-.pollmaster-dismiss-btn:hover {
-    background: #5a6268;
+    @apply btn btn-neutral btn-sm font-normal transition-colors duration-200;
 }
 
 .pollmaster-dismiss-permanent {
-    background: #dc3545;
-}
-
-.pollmaster-dismiss-permanent:hover {
-    background: #c82333;
+    @apply btn btn-error btn-sm font-normal transition-colors duration-200;
 }
 
 /* Poll Embed Styles */
@@ -615,51 +479,43 @@
 /* Responsive Design */
 @media (max-width: 768px) {
     .pollmaster-popup-content {
-        width: 95vw;
-        margin: 10px;
+        @apply w-[95vw] m-2;
     }
     
     .pollmaster-popup-inner {
-        padding: 20px;
+        @apply p-5;
     }
     
     .pollmaster-poll-question {
-        font-size: 20px;
+        @apply text-xl;
     }
     
     .pollmaster-vote-options {
-        gap: 12px;
+        @apply gap-3;
     }
     
     .pollmaster-vote-btn {
-        padding: 15px 20px;
-        font-size: 15px;
-        min-height: 50px;
+        @apply px-5 py-4 text-base min-h-12;
     }
     
     .pollmaster-option-header {
-        flex-direction: column;
-        align-items: flex-start;
-        gap: 8px;
+        @apply flex-col items-start gap-2;
     }
     
     .pollmaster-social-sharing {
-        gap: 8px;
+        @apply gap-2;
     }
     
     .pollmaster-share-btn {
-        width: 40px;
-        height: 40px;
-        font-size: 16px;
+        @apply btn-sm;
     }
     
     .pollmaster-dismiss-section {
-        flex-direction: column;
-        gap: 10px;
+        @apply flex-col gap-2;
     }
     
     .pollmaster-dismiss-btn {
-        width: 100%;
+        @apply w-full;
     }
 }
 

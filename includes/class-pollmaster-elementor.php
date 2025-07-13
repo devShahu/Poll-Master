@@ -40,14 +40,14 @@ class PollMaster_Elementor {
     /**
      * Register widgets
      */
-    public function register_widgets() {
+    public function register_widgets($widgets_manager) {
         // Include widget files
         require_once POLLMASTER_PLUGIN_PATH . 'includes/elementor/class-pollmaster-poll-widget.php';
         require_once POLLMASTER_PLUGIN_PATH . 'includes/elementor/class-pollmaster-popup-widget.php';
         
-        // Register widgets
-        \Elementor\Plugin::instance()->widgets_manager->register_widget_type(new PollMaster_Poll_Widget());
-        \Elementor\Plugin::instance()->widgets_manager->register_widget_type(new PollMaster_Popup_Widget());
+        // Register widgets using the modern method
+        $widgets_manager->register(new PollMaster_Poll_Widget());
+        $widgets_manager->register(new PollMaster_Popup_Widget());
     }
 }
 

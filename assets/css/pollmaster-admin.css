@@ -1,201 +1,147 @@
 /**
- * PollMaster Admin Styles
+ * PollMaster Admin Styles - DaisyUI Enhanced
  * 
- * Stylesheet for the WordPress admin interface
+ * Modern dashboard design using DaisyUI components
  */
+@import 'https://cdn.jsdelivr.net/npm/daisyui@4.4.19/dist/full.css';
+@import 'https://cdn.jsdelivr.net/npm/tailwindcss@3.3.6/dist/tailwind.min.css';
 
 /* Admin Page Layout */
 .pollmaster-admin-page {
-    margin: 20px 0;
+    @apply container mx-auto p-6 bg-base-100 min-h-screen;
 }
 
 .pollmaster-admin-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-bottom: 30px;
-    padding-bottom: 20px;
-    border-bottom: 1px solid #ddd;
+    @apply flex items-center justify-between mb-8 pb-6 border-b border-base-300;
 }
 
 .pollmaster-admin-title {
-    display: flex;
-    align-items: center;
-    gap: 15px;
+    @apply flex items-center gap-4;
 }
 
 .pollmaster-admin-title h1 {
-    margin: 0;
-    font-size: 28px;
-    color: #23282d;
+    @apply text-3xl font-bold text-base-content m-0;
 }
 
 .pollmaster-logo {
-    width: 40px;
-    height: 40px;
-    background: linear-gradient(135deg, #007cba, #005a87);
-    border-radius: 8px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: white;
-    font-weight: bold;
-    font-size: 18px;
+    @apply w-12 h-12 bg-gradient-to-br from-primary to-secondary rounded-xl flex items-center justify-center text-primary-content font-bold text-xl shadow-lg;
 }
 
 .pollmaster-admin-actions {
-    display: flex;
-    gap: 10px;
+    @apply flex gap-3;
 }
 
-/* Cards and Containers */
+/* Cards and Containers - DaisyUI */
 .pollmaster-card {
-    background: #fff;
-    border: 1px solid #ddd;
-    border-radius: 8px;
-    padding: 20px;
-    margin-bottom: 20px;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+    @apply card bg-base-100 shadow-xl mb-6;
 }
 
 .pollmaster-card-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-bottom: 20px;
-    padding-bottom: 15px;
-    border-bottom: 1px solid #eee;
+    @apply flex items-center justify-between mb-6 pb-4 border-b border-base-300;
 }
 
 .pollmaster-card-title {
-    font-size: 18px;
-    font-weight: 600;
-    color: #23282d;
-    margin: 0;
+    @apply card-title text-xl font-bold text-base-content m-0;
 }
 
 .pollmaster-card-actions {
-    display: flex;
-    gap: 8px;
+    @apply card-actions justify-end gap-2;
 }
 
-/* Form Styles */
+/* Form Styles - DaisyUI */
 .pollmaster-form {
-    max-width: 800px;
+    @apply max-w-4xl space-y-6;
 }
 
 .pollmaster-form-row {
-    margin-bottom: 20px;
+    @apply mb-6;
 }
 
 .pollmaster-form-group {
-    margin-bottom: 15px;
+    @apply form-control w-full;
 }
 
 .pollmaster-form-label {
-    display: block;
-    font-weight: 600;
-    margin-bottom: 5px;
-    color: #23282d;
+    @apply label label-text font-semibold text-base-content;
 }
 
 .pollmaster-form-label.required::after {
     content: ' *';
-    color: #dc3232;
+    @apply text-error;
 }
 
 .pollmaster-form-input,
 .pollmaster-form-textarea,
 .pollmaster-form-select {
-    width: 100%;
-    padding: 10px 12px;
-    border: 1px solid #ddd;
-    border-radius: 4px;
-    font-size: 14px;
-    transition: border-color 0.2s ease;
-}
-
-.pollmaster-form-input:focus,
-.pollmaster-form-textarea:focus,
-.pollmaster-form-select:focus {
-    border-color: #007cba;
-    outline: none;
-    box-shadow: 0 0 0 2px rgba(0, 124, 186, 0.1);
+    @apply input input-bordered w-full focus:input-primary;
 }
 
 .pollmaster-form-textarea {
-    min-height: 100px;
-    resize: vertical;
+    @apply textarea textarea-bordered min-h-24 resize-y focus:textarea-primary;
+}
+
+.pollmaster-form-select {
+    @apply select select-bordered focus:select-primary;
 }
 
 .pollmaster-form-help {
-    font-size: 13px;
-    color: #666;
-    margin-top: 5px;
-    font-style: italic;
+    @apply label-text-alt text-base-content/70 mt-1 italic;
 }
 
 .pollmaster-form-error {
-    color: #dc3232;
-    font-size: 13px;
-    margin-top: 5px;
+    @apply label-text-alt text-error mt-1;
 }
 
-/* Checkbox and Radio Styles */
+/* Checkbox and Radio Styles - DaisyUI */
 .pollmaster-checkbox-group,
 .pollmaster-radio-group {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
+    @apply flex flex-col gap-3;
 }
 
 .pollmaster-checkbox-item,
 .pollmaster-radio-item {
-    display: flex;
-    align-items: center;
-    gap: 8px;
+    @apply flex items-center gap-3;
 }
 
-.pollmaster-checkbox-item input,
+.pollmaster-checkbox-item input {
+    @apply checkbox checkbox-primary;
+}
+
 .pollmaster-radio-item input {
-    margin: 0;
+    @apply radio radio-primary;
 }
 
-/* Button Styles */
+/* Button Styles - DaisyUI */
 .pollmaster-btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    padding: 10px 16px;
-    border: none;
-    border-radius: 4px;
-    font-size: 14px;
-    font-weight: 500;
-    text-decoration: none;
-    cursor: pointer;
-    transition: all 0.2s ease;
-    line-height: 1;
-}
-
-.pollmaster-btn:focus {
-    outline: 2px solid #007cba;
-    outline-offset: 2px;
+    @apply btn gap-2 no-underline;
 }
 
 .pollmaster-btn-primary {
-    background: #007cba;
-    color: #fff;
-}
-
-.pollmaster-btn-primary:hover {
-    background: #005a87;
-    color: #fff;
+    @apply btn-primary;
 }
 
 .pollmaster-btn-secondary {
-    background: #f1f1f1;
-    color: #23282d;
-    border: 1px solid #ddd;
+    @apply btn-outline;
+}
+
+.pollmaster-btn-success {
+    @apply btn-success;
+}
+
+.pollmaster-btn-warning {
+    @apply btn-warning;
+}
+
+.pollmaster-btn-error {
+    @apply btn-error;
+}
+
+.pollmaster-btn-sm {
+    @apply btn-sm;
+}
+
+.pollmaster-btn-lg {
+    @apply btn-lg;
 }
 
 .pollmaster-btn-secondary:hover {

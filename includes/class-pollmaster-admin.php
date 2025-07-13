@@ -1,8 +1,9 @@
 <?php
 /**
- * PollMaster Admin Class
+ * Admin functionality for PollMaster
  * 
- * Handles admin interface and functionality
+ * @package PollMaster
+ * @since 1.0.0
  */
 
 // Prevent direct access
@@ -12,60 +13,156 @@ if (!defined('ABSPATH')) {
 
 class PollMaster_Admin {
     
-    private $database;
-    
     /**
      * Constructor
      */
     public function __construct() {
-        $this->database = new PollMaster_Database();
-        add_action('admin_menu', array($this, 'add_admin_menu'));
-        add_action('admin_init', array($this, 'admin_init'));
-        add_action('admin_enqueue_scripts', array($this, 'enqueue_admin_scripts'));
-        add_action('wp_ajax_pollmaster_admin_action', array($this, 'handle_admin_ajax'));
+        add_action('admin_post_pollmaster_invite_manager', [$this, 'invite_manager']);
+        add_action('admin_post_nopriv_pollmaster_invite_manager', [$this, 'invite_manager']);
+        add_action('admin_enqueue_scripts', [$this, 'enqueue_admin_assets']);
+    }
+
+    /**
+     * Handle manager invitation request
+     */
+    public function invite_manager() {
+        check_admin_referer('pollmaster_invite_manager_nonce');
+
+        $email = sanitize_email($_POST['invite_manager_email']);
+        $existing_user = email_exists($email);
+
+        if (!is_email($email)) {
+            wp_send_json_error(['message' => 'Invalid email address']);
+        }
+
+        $manager_token = wp_generate_password(20, false);
+        $invite_url = add_query_arg([
+            'action' => 'pollmaster_manager_invite',
+            'token' => $manager_token
+        ], admin_url('admin.php'));
+
+
+        $subject = 'You are invited to manage PollMaster';
+        $message = sprintf(
+            'You have been invited to manage polls. Click here to accept: %s',
+            esc_url($invite_url)
+        );
+
+        wp_mail($email, $subject, $message);
+        $pending_invites = get_option('pollmaster_pending_invites', []);
+        $pending_invites[$email] = [
+            'token' => $manager_token,
+            'date' => current_time('mysql')
+        ];
+        update_option('pollmaster_pending_invites', $pending_invites);
+
+        wp_send_json_success([
+            'message' => 'Invitation sent successfully',
+            'redirect' => admin_url('admin.php?page=pollmaster_settings')
+        ]);
+    }
+
+    /**
+     * Enqueue admin scripts/styles and localize AJAX data
+     */
+    public function enqueue_admin_assets($hook) {
+        wp_enqueue_script(
+            'pollmaster-admin',
+            plugins_url('/assets/js/pollmaster-admin.js', POLLMASTER_PLUGIN_FILE),
+            ['jquery'],
+            POLLMASTER_VERSION,
+            true
+        );
+
+        wp_localize_script('pollmaster-admin', 'pollmaster_admin', [
+            'ajax_url' => admin_url('admin-ajax.php'),
+            'nonce' => wp_create_nonce('pollmaster_admin_nonce')
+        ]);
+
+        wp_enqueue_style(
+            'pollmaster-admin',
+            plugins_url('/assets/css/pollmaster-admin.css', POLLMASTER_PLUGIN_FILE),
+            [],
+            POLLMASTER_VERSION
+        );
     }
     
     /**
      * Add admin menu
      */
     public function add_admin_menu() {
+        // Main menu page
         add_menu_page(
             __('PollMaster', 'pollmaster'),
             __('PollMaster', 'pollmaster'),
-            'manage_options',
+            'manage_options', // Changed to manage_options for proper access
             'pollmaster',
-            array($this, 'admin_page_polls'),
-            'dashicons-chart-pie',
+            array($this, 'admin_page_dashboard'),
+            'dashicons-chart-bar',
             30
         );
         
+        // Dashboard submenu
         add_submenu_page(
             'pollmaster',
+            __('Dashboard', 'pollmaster'),
+            __('Dashboard', 'pollmaster'),
+            'manage_options',
+            'pollmaster',
+            array($this, 'admin_page_dashboard')
+        );
+        
+        // All Polls submenu
+        add_submenu_page(
+            'pollmaster',
+            __('All Polls', 'pollmaster'),
+            __('All Polls', 'pollmaster'),
+            'manage_options',
+            'pollmaster-all-polls',
+            array($this, 'admin_page_all_polls')
+        );
+        
+        // Manage Polls submenu (hidden from menu but accessible)
+        add_submenu_page(
+            null, // Hidden from menu
             __('Manage Polls', 'pollmaster'),
             __('Manage Polls', 'pollmaster'),
             'manage_options',
-            'pollmaster',
-            array($this, 'admin_page_polls')
+            'pollmaster-manage-polls',
+            array($this, 'admin_page_manage_polls')
         );
         
+        // Add Poll submenu (hidden from menu but accessible)
         add_submenu_page(
-            'pollmaster',
-            __('Weekly Poll', 'pollmaster'),
-            __('Weekly Poll', 'pollmaster'),
+            null, // Hidden from menu
+            __('Add Poll', 'pollmaster'),
+            __('Add Poll', 'pollmaster'),
             'manage_options',
-            'pollmaster-weekly',
-            array($this, 'admin_page_weekly')
+            'pollmaster-add-poll',
+            array($this, 'admin_page_add_poll')
         );
         
+        // Edit Poll submenu (hidden from menu but accessible)
         add_submenu_page(
-            'pollmaster',
-            __('Contests', 'pollmaster'),
-            __('Contests', 'pollmaster'),
+            null, // Hidden from menu
+            __('Edit Poll', 'pollmaster'),
+            __('Edit Poll', 'pollmaster'),
             'manage_options',
-            'pollmaster-contests',
-            array($this, 'admin_page_contests')
+            'pollmaster-edit-poll',
+            array($this, 'admin_page_edit_poll')
         );
         
+        // Poll Results submenu (hidden from menu but accessible)
+        add_submenu_page(
+            null, // Hidden from menu
+            __('Poll Results', 'pollmaster'),
+            __('Poll Results', 'pollmaster'),
+            'manage_options',
+            'pollmaster-poll-results',
+            array($this, 'admin_page_poll_results')
+        );
+        
+        // Settings submenu
         add_submenu_page(
             'pollmaster',
             __('Settings', 'pollmaster'),
@@ -74,637 +171,208 @@ class PollMaster_Admin {
             'pollmaster-settings',
             array($this, 'admin_page_settings')
         );
+        
+        // Test submenu
+        add_submenu_page(
+            'pollmaster',
+            __('Plugin Test', 'pollmaster'),
+            __('Plugin Test', 'pollmaster'),
+            'manage_options',
+            'pollmaster-test',
+            array($this, 'admin_page_test')
+        );
     }
     
     /**
      * Admin init
      */
     public function admin_init() {
-        register_setting('pollmaster_settings', 'pollmaster_settings', array($this, 'sanitize_settings'));
+        // Register settings
+        register_setting('pollmaster_settings', 'pollmaster_settings');
     }
     
     /**
-     * Enqueue admin scripts
+     * Enqueue admin scripts and styles
      */
     public function enqueue_admin_scripts($hook) {
+        // Only load on PollMaster pages
         if (strpos($hook, 'pollmaster') === false) {
             return;
         }
         
-        wp_enqueue_script('pollmaster-admin', POLLMASTER_PLUGIN_URL . 'assets/js/admin.js', array('jquery'), POLLMASTER_VERSION, true);
-        wp_enqueue_style('pollmaster-admin', POLLMASTER_PLUGIN_URL . 'assets/css/admin.css', array(), POLLMASTER_VERSION);
+        // Enqueue WordPress media scripts for image uploader
+        if (strpos($hook, 'pollmaster-add-poll') !== false || strpos($hook, 'pollmaster-edit-poll') !== false) {
+            wp_enqueue_media();
+        }
         
+        // Enqueue Tailwind CSS
+        wp_enqueue_script('tailwindcss', 'https://cdn.tailwindcss.com', array(), POLLMASTER_VERSION, false);
+        
+        // Enqueue DaisyUI
+        wp_enqueue_style('daisyui', 'https://cdn.jsdelivr.net/npm/daisyui@4.4.24/dist/full.min.css', array(), POLLMASTER_VERSION);
+        
+        // Enqueue admin CSS
+        wp_enqueue_style('pollmaster-admin', POLLMASTER_PLUGIN_URL . 'assets/css/pollmaster-admin.css', array(), POLLMASTER_VERSION);
+        
+        // Enqueue modern manage polls CSS for specific page
+        if (strpos($hook, 'pollmaster-manage-polls') !== false || strpos($hook, 'pollmaster-all-polls') !== false) {
+            wp_enqueue_style('pollmaster-modern-manage', POLLMASTER_PLUGIN_URL . 'assets/css/modern-manage-polls.css', array(), POLLMASTER_VERSION);
+            wp_enqueue_script('pollmaster-manage-polls', POLLMASTER_PLUGIN_URL . 'assets/js/manage-polls.js', array('jquery'), POLLMASTER_VERSION, true);
+        }
+        
+        // Enqueue admin JS
+        wp_enqueue_script('pollmaster-admin', POLLMASTER_PLUGIN_URL . 'assets/js/pollmaster-admin.js', array('jquery'), POLLMASTER_VERSION, true);
+        
+        // Localize script
         wp_localize_script('pollmaster-admin', 'pollmaster_admin', array(
             'ajax_url' => admin_url('admin-ajax.php'),
             'nonce' => wp_create_nonce('pollmaster_admin_nonce'),
             'strings' => array(
                 'confirm_delete' => __('Are you sure you want to delete this poll?', 'pollmaster'),
                 'error' => __('An error occurred. Please try again.', 'pollmaster'),
-                'success' => __('Action completed successfully.', 'pollmaster')
+                'success' => __('Operation completed successfully.', 'pollmaster')
             )
         ));
     }
     
     /**
-     * Manage Polls admin page
+     * Dashboard page
      */
-    public function admin_page_polls() {
-        $action = isset($_GET['action']) ? sanitize_text_field($_GET['action']) : 'list';
-        $poll_id = isset($_GET['poll_id']) ? (int)$_GET['poll_id'] : 0;
+    public function admin_page_dashboard() {
+        include POLLMASTER_PLUGIN_PATH . 'templates/admin/dashboard.php';
+    }
+    
+    /**
+     * All Polls page
+     */
+    public function admin_page_all_polls() {
+        // Handle actions
+        $action = isset($_GET['action']) ? sanitize_text_field($_GET['action']) : '';
+        $poll_id = isset($_GET['poll_id']) ? intval($_GET['poll_id']) : 0;
         
         switch ($action) {
-            case 'edit':
-                $this->render_edit_poll_form($poll_id);
-                break;
             case 'add':
-                $this->render_add_poll_form();
+            case 'edit':
+                include POLLMASTER_PLUGIN_PATH . 'templates/admin/add-edit-poll.php';
+                break;
+            case 'results':
+                include POLLMASTER_PLUGIN_PATH . 'templates/admin/poll-results.php';
+                break;
+            case 'delete':
+                $this->handle_delete_poll($poll_id);
+                include POLLMASTER_PLUGIN_PATH . 'templates/admin/manage-polls.php';
                 break;
             default:
-                $this->render_polls_list();
+                include POLLMASTER_PLUGIN_PATH . 'templates/admin/manage-polls.php';
                 break;
         }
     }
     
     /**
-     * Weekly Poll admin page
-     */
-    public function admin_page_weekly() {
-        $this->render_weekly_poll_form();
-    }
-    
-    /**
-     * Contests admin page
-     */
-    public function admin_page_contests() {
-        $this->render_contests_page();
-    }
-    
-    /**
-     * Settings admin page
+     * Settings page
      */
     public function admin_page_settings() {
-        $this->render_settings_page();
+        include POLLMASTER_PLUGIN_PATH . 'templates/admin/settings.php';
     }
     
     /**
-     * Render polls list
+     * Test page
      */
-    private function render_polls_list() {
-        $page = isset($_GET['paged']) ? max(1, (int)$_GET['paged']) : 1;
-        $per_page = 20;
-        $polls = $this->database->get_polls($page, $per_page);
-        $total_polls = $this->database->get_polls_count();
-        $total_pages = ceil($total_polls / $per_page);
-        
-        ?>
-        <div class="wrap">
-            <h1 class="wp-heading-inline"><?php _e('Manage Polls', 'pollmaster'); ?></h1>
-            <a href="<?php echo admin_url('admin.php?page=pollmaster&action=add'); ?>" class="page-title-action"><?php _e('Add New Poll', 'pollmaster'); ?></a>
-            <hr class="wp-header-end">
-            
-            <?php if (empty($polls)): ?>
-                <div class="notice notice-info">
-                    <p><?php _e('No polls found. Create your first poll!', 'pollmaster'); ?></p>
-                </div>
-            <?php else: ?>
-                <table class="wp-list-table widefat fixed striped">
-                    <thead>
-                        <tr>
-                            <th scope="col"><?php _e('Question', 'pollmaster'); ?></th>
-                            <th scope="col"><?php _e('Options', 'pollmaster'); ?></th>
-                            <th scope="col"><?php _e('Votes', 'pollmaster'); ?></th>
-                            <th scope="col"><?php _e('Type', 'pollmaster'); ?></th>
-                            <th scope="col"><?php _e('Author', 'pollmaster'); ?></th>
-                            <th scope="col"><?php _e('Date', 'pollmaster'); ?></th>
-                            <th scope="col"><?php _e('Actions', 'pollmaster'); ?></th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <?php foreach ($polls as $poll): 
-                            $results = $this->database->get_poll_results($poll->id);
-                            $author = get_userdata($poll->user_id);
-                            $poll_type = array();
-                            if ($poll->is_weekly) $poll_type[] = __('Weekly', 'pollmaster');
-                            if ($poll->is_contest) $poll_type[] = __('Contest', 'pollmaster');
-                            if (empty($poll_type)) $poll_type[] = __('Regular', 'pollmaster');
-                        ?>
-                            <tr>
-                                <td>
-                                    <strong><?php echo esc_html($poll->question); ?></strong>
-                                    <?php if ($poll->image_url): ?>
-                                        <br><small><?php _e('Has image', 'pollmaster'); ?></small>
-                                    <?php endif; ?>
-                                </td>
-                                <td>
-                                    <?php echo esc_html($poll->option_a); ?> / <?php echo esc_html($poll->option_b); ?>
-                                </td>
-                                <td>
-                                    <?php echo $results['total_votes']; ?>
-                                    <br><small>
-                                        <?php echo $poll->option_a; ?>: <?php echo $results['percentages']['option_a']; ?>%<br>
-                                        <?php echo $poll->option_b; ?>: <?php echo $results['percentages']['option_b']; ?>%
-                                    </small>
-                                </td>
-                                <td><?php echo implode(', ', $poll_type); ?></td>
-                                <td><?php echo $author ? esc_html($author->display_name) : __('Unknown', 'pollmaster'); ?></td>
-                                <td><?php echo date_i18n(get_option('date_format'), strtotime($poll->created_at)); ?></td>
-                                <td>
-                                    <a href="<?php echo admin_url('admin.php?page=pollmaster&action=edit&poll_id=' . $poll->id); ?>" class="button button-small"><?php _e('Edit', 'pollmaster'); ?></a>
-                                    <button class="button button-small button-link-delete pollmaster-delete-poll" data-poll-id="<?php echo $poll->id; ?>"><?php _e('Delete', 'pollmaster'); ?></button>
-                                </td>
-                            </tr>
-                        <?php endforeach; ?>
-                    </tbody>
-                </table>
-                
-                <?php if ($total_pages > 1): ?>
-                    <div class="tablenav bottom">
-                        <div class="tablenav-pages">
-                            <?php
-                            echo paginate_links(array(
-                                'base' => add_query_arg('paged', '%#%'),
-                                'format' => '',
-                                'prev_text' => __('&laquo;'),
-                                'next_text' => __('&raquo;'),
-                                'total' => $total_pages,
-                                'current' => $page
-                            ));
-                            ?>
-                        </div>
-                    </div>
-                <?php endif; ?>
-            <?php endif; ?>
-        </div>
-        <?php
+    public function admin_page_test() {
+        include POLLMASTER_PLUGIN_PATH . 'templates/admin/test.php';
     }
     
     /**
-     * Render add poll form
+     * Manage Polls page
      */
-    private function render_add_poll_form() {
-        if (isset($_POST['submit_poll'])) {
-            $this->handle_poll_submission();
-        }
-        
-        ?>
-        <div class="wrap">
-            <h1><?php _e('Add New Poll', 'pollmaster'); ?></h1>
-            <a href="<?php echo admin_url('admin.php?page=pollmaster'); ?>" class="page-title-action"><?php _e('Back to Polls', 'pollmaster'); ?></a>
-            
-            <form method="post" enctype="multipart/form-data" class="pollmaster-poll-form">
-                <?php wp_nonce_field('pollmaster_poll_action', 'pollmaster_poll_nonce'); ?>
-                
-                <table class="form-table">
-                    <tr>
-                        <th scope="row"><label for="question"><?php _e('Question', 'pollmaster'); ?></label></th>
-                        <td>
-                            <input type="text" id="question" name="question" class="regular-text" maxlength="255" required>
-                            <p class="description"><?php _e('Maximum 255 characters', 'pollmaster'); ?></p>
-                        </td>
-                    </tr>
-                    <tr>
-                        <th scope="row"><label for="option_a"><?php _e('Option A', 'pollmaster'); ?></label></th>
-                        <td>
-                            <input type="text" id="option_a" name="option_a" class="regular-text" maxlength="50" required>
-                            <p class="description"><?php _e('Maximum 50 characters', 'pollmaster'); ?></p>
-                        </td>
-                    </tr>
-                    <tr>
-                        <th scope="row"><label for="option_b"><?php _e('Option B', 'pollmaster'); ?></label></th>
-                        <td>
-                            <input type="text" id="option_b" name="option_b" class="regular-text" maxlength="50" required>
-                            <p class="description"><?php _e('Maximum 50 characters', 'pollmaster'); ?></p>
-                        </td>
-                    </tr>
-                    <tr>
-                        <th scope="row"><label for="poll_image"><?php _e('Image (Optional)', 'pollmaster'); ?></label></th>
-                        <td>
-                            <input type="file" id="poll_image" name="poll_image" accept="image/jpeg,image/png">
-                            <p class="description"><?php _e('Upload an image for photo-based polls. Maximum 5MB, PNG/JPEG only.', 'pollmaster'); ?></p>
-                        </td>
-                    </tr>
-                    <tr>
-                        <th scope="row"><?php _e('Poll Type', 'pollmaster'); ?></th>
-                        <td>
-                            <fieldset>
-                                <label>
-                                    <input type="checkbox" name="is_weekly" value="1">
-                                    <?php _e('Weekly Poll', 'pollmaster'); ?>
-                                </label><br>
-                                <label>
-                                    <input type="checkbox" name="is_contest" value="1">
-                                    <?php _e('Contest Poll', 'pollmaster'); ?>
-                                </label>
-                            </fieldset>
-                        </td>
-                    </tr>
-                    <tr class="contest-fields" style="display: none;">
-                        <th scope="row"><label for="contest_prize"><?php _e('Contest Prize', 'pollmaster'); ?></label></th>
-                        <td>
-                            <textarea id="contest_prize" name="contest_prize" class="large-text" rows="3"></textarea>
-                            <p class="description"><?php _e('Describe the prize for this contest.', 'pollmaster'); ?></p>
-                        </td>
-                    </tr>
-                    <tr class="contest-fields" style="display: none;">
-                        <th scope="row"><label for="contest_end_date"><?php _e('Contest End Date', 'pollmaster'); ?></label></th>
-                        <td>
-                            <input type="datetime-local" id="contest_end_date" name="contest_end_date">
-                            <p class="description"><?php _e('When should this contest end?', 'pollmaster'); ?></p>
-                        </td>
-                    </tr>
-                </table>
-                
-                <?php submit_button(__('Create Poll', 'pollmaster'), 'primary', 'submit_poll'); ?>
-            </form>
-        </div>
-        
-        <script>
-        jQuery(document).ready(function($) {
-            $('input[name="is_contest"]').change(function() {
-                if ($(this).is(':checked')) {
-                    $('.contest-fields').show();
-                } else {
-                    $('.contest-fields').hide();
-                }
-            });
-        });
-        </script>
-        <?php
+    public function admin_page_manage_polls() {
+        include POLLMASTER_PLUGIN_PATH . 'templates/admin/manage-polls.php';
     }
     
     /**
-     * Render edit poll form
+     * Add Poll page
      */
-    private function render_edit_poll_form($poll_id) {
-        $poll = $this->database->get_poll($poll_id);
-        
-        if (!$poll) {
-            echo '<div class="wrap"><div class="notice notice-error"><p>' . __('Poll not found.', 'pollmaster') . '</p></div></div>';
+    public function admin_page_add_poll() {
+        include POLLMASTER_PLUGIN_PATH . 'templates/admin/add-edit-poll.php';
+    }
+    
+    /**
+     * Edit Poll page
+     */
+    public function admin_page_edit_poll() {
+        include POLLMASTER_PLUGIN_PATH . 'templates/admin/add-edit-poll.php';
+    }
+    
+    /**
+     * Poll Results page
+     */
+    public function admin_page_poll_results() {
+        include POLLMASTER_PLUGIN_PATH . 'templates/admin/poll-results.php';
+    }
+    
+    /**
+     * Handle poll deletion
+     */
+    private function handle_delete_poll($poll_id) {
+        if (!$poll_id || !current_user_can('manage_options')) {
             return;
         }
         
-        if (isset($_POST['submit_poll'])) {
-            $this->handle_poll_update($poll_id);
-            $poll = $this->database->get_poll($poll_id); // Refresh data
-        }
-        
-        ?>
-        <div class="wrap">
-            <h1><?php _e('Edit Poll', 'pollmaster'); ?></h1>
-            <a href="<?php echo admin_url('admin.php?page=pollmaster'); ?>" class="page-title-action"><?php _e('Back to Polls', 'pollmaster'); ?></a>
-            
-            <form method="post" enctype="multipart/form-data" class="pollmaster-poll-form">
-                <?php wp_nonce_field('pollmaster_poll_action', 'pollmaster_poll_nonce'); ?>
-                
-                <table class="form-table">
-                    <tr>
-                        <th scope="row"><label for="question"><?php _e('Question', 'pollmaster'); ?></label></th>
-                        <td>
-                            <input type="text" id="question" name="question" class="regular-text" maxlength="255" value="<?php echo esc_attr($poll->question); ?>" required>
-                            <p class="description"><?php _e('Maximum 255 characters', 'pollmaster'); ?></p>
-                        </td>
-                    </tr>
-                    <tr>
-                        <th scope="row"><label for="option_a"><?php _e('Option A', 'pollmaster'); ?></label></th>
-                        <td>
-                            <input type="text" id="option_a" name="option_a" class="regular-text" maxlength="50" value="<?php echo esc_attr($poll->option_a); ?>" required>
-                            <p class="description"><?php _e('Maximum 50 characters', 'pollmaster'); ?></p>
-                        </td>
-                    </tr>
-                    <tr>
-                        <th scope="row"><label for="option_b"><?php _e('Option B', 'pollmaster'); ?></label></th>
-                        <td>
-                            <input type="text" id="option_b" name="option_b" class="regular-text" maxlength="50" value="<?php echo esc_attr($poll->option_b); ?>" required>
-                            <p class="description"><?php _e('Maximum 50 characters', 'pollmaster'); ?></p>
-                        </td>
-                    </tr>
-                    <tr>
-                        <th scope="row"><label for="poll_image"><?php _e('Image (Optional)', 'pollmaster'); ?></label></th>
-                        <td>
-                            <?php if ($poll->image_url): ?>
-                                <div class="current-image">
-                                    <img src="<?php echo esc_url($poll->image_url); ?>" style="max-width: 200px; height: auto;">
-                                    <p><small><?php _e('Current image', 'pollmaster'); ?></small></p>
-                                </div>
-                            <?php endif; ?>
-                            <input type="file" id="poll_image" name="poll_image" accept="image/jpeg,image/png">
-                            <p class="description"><?php _e('Upload a new image to replace the current one. Maximum 5MB, PNG/JPEG only.', 'pollmaster'); ?></p>
-                        </td>
-                    </tr>
-                    <tr>
-                        <th scope="row"><?php _e('Poll Type', 'pollmaster'); ?></th>
-                        <td>
-                            <fieldset>
-                                <label>
-                                    <input type="checkbox" name="is_weekly" value="1" <?php checked($poll->is_weekly, 1); ?>>
-                                    <?php _e('Weekly Poll', 'pollmaster'); ?>
-                                </label><br>
-                                <label>
-                                    <input type="checkbox" name="is_contest" value="1" <?php checked($poll->is_contest, 1); ?>>
-                                    <?php _e('Contest Poll', 'pollmaster'); ?>
-                                </label>
-                            </fieldset>
-                        </td>
-                    </tr>
-                    <tr class="contest-fields" <?php echo $poll->is_contest ? '' : 'style="display: none;"'; ?>>
-                        <th scope="row"><label for="contest_prize"><?php _e('Contest Prize', 'pollmaster'); ?></label></th>
-                        <td>
-                            <textarea id="contest_prize" name="contest_prize" class="large-text" rows="3"><?php echo esc_textarea($poll->contest_prize); ?></textarea>
-                            <p class="description"><?php _e('Describe the prize for this contest.', 'pollmaster'); ?></p>
-                        </td>
-                    </tr>
-                    <tr class="contest-fields" <?php echo $poll->is_contest ? '' : 'style="display: none;"'; ?>>
-                        <th scope="row"><label for="contest_end_date"><?php _e('Contest End Date', 'pollmaster'); ?></label></th>
-                        <td>
-                            <input type="datetime-local" id="contest_end_date" name="contest_end_date" value="<?php echo $poll->contest_end_date ? date('Y-m-d\TH:i', strtotime($poll->contest_end_date)) : ''; ?>">
-                            <p class="description"><?php _e('When should this contest end?', 'pollmaster'); ?></p>
-                        </td>
-                    </tr>
-                </table>
-                
-                <?php submit_button(__('Update Poll', 'pollmaster'), 'primary', 'submit_poll'); ?>
-            </form>
-        </div>
-        
-        <script>
-        jQuery(document).ready(function($) {
-            $('input[name="is_contest"]').change(function() {
-                if ($(this).is(':checked')) {
-                    $('.contest-fields').show();
-                } else {
-                    $('.contest-fields').hide();
-                }
-            });
-        });
-        </script>
-        <?php
-    }
-    
-    /**
-     * Handle poll submission
-     */
-    private function handle_poll_submission() {
-        if (!wp_verify_nonce($_POST['pollmaster_poll_nonce'], 'pollmaster_poll_action')) {
+        // Verify nonce
+        if (!isset($_GET['_wpnonce']) || !wp_verify_nonce($_GET['_wpnonce'], 'delete_poll_' . $poll_id)) {
             wp_die(__('Security check failed.', 'pollmaster'));
         }
         
-        $data = array(
-            'user_id' => get_current_user_id(),
-            'question' => sanitize_text_field($_POST['question']),
-            'option_a' => sanitize_text_field($_POST['option_a']),
-            'option_b' => sanitize_text_field($_POST['option_b']),
-            'is_weekly' => isset($_POST['is_weekly']) ? 1 : 0,
-            'is_contest' => isset($_POST['is_contest']) ? 1 : 0
-        );
+        $database = new PollMaster_Database();
+        $result = $database->delete_poll($poll_id);
         
-        if (isset($_POST['contest_prize'])) {
-            $data['contest_prize'] = sanitize_textarea_field($_POST['contest_prize']);
-        }
-        
-        if (isset($_POST['contest_end_date']) && !empty($_POST['contest_end_date'])) {
-            $data['contest_end_date'] = sanitize_text_field($_POST['contest_end_date']);
-        }
-        
-        // Handle image upload
-        if (isset($_FILES['poll_image']) && $_FILES['poll_image']['error'] === UPLOAD_ERR_OK) {
-            $image_url = $this->handle_image_upload($_FILES['poll_image']);
-            if ($image_url) {
-                $data['image_url'] = $image_url;
-            }
-        }
-        
-        $poll_id = $this->database->create_poll($data);
-        
-        if ($poll_id) {
-            echo '<div class="notice notice-success"><p>' . __('Poll created successfully!', 'pollmaster') . '</p></div>';
+        if ($result) {
+            // Use JavaScript redirect to avoid header issues
+            echo '<script>window.location.href = "' . add_query_arg(array('message' => 'deleted'), admin_url('admin.php?page=pollmaster-all-polls')) . '";</script>';
+            exit;
         } else {
-            echo '<div class="notice notice-error"><p>' . __('Failed to create poll. Please try again.', 'pollmaster') . '</p></div>';
+            // Use JavaScript redirect to avoid header issues
+            echo '<script>window.location.href = "' . add_query_arg(array('error' => 'delete_failed'), admin_url('admin.php?page=pollmaster-all-polls')) . '";</script>';
+            exit;
         }
     }
     
     /**
-     * Handle poll update
+     * Render modern polls interface
      */
-    private function handle_poll_update($poll_id) {
-        if (!wp_verify_nonce($_POST['pollmaster_poll_nonce'], 'pollmaster_poll_action')) {
-            wp_die(__('Security check failed.', 'pollmaster'));
-        }
+    public function render_modern_polls_interface() {
+        $database = new PollMaster_Database();
+        $polls = $database->get_polls();
         
-        $data = array(
-            'question' => sanitize_text_field($_POST['question']),
-            'option_a' => sanitize_text_field($_POST['option_a']),
-            'option_b' => sanitize_text_field($_POST['option_b']),
-            'is_weekly' => isset($_POST['is_weekly']) ? 1 : 0,
-            'is_contest' => isset($_POST['is_contest']) ? 1 : 0
-        );
-        
-        if (isset($_POST['contest_prize'])) {
-            $data['contest_prize'] = sanitize_textarea_field($_POST['contest_prize']);
-        }
-        
-        if (isset($_POST['contest_end_date']) && !empty($_POST['contest_end_date'])) {
-            $data['contest_end_date'] = sanitize_text_field($_POST['contest_end_date']);
-        }
-        
-        // Handle image upload
-        if (isset($_FILES['poll_image']) && $_FILES['poll_image']['error'] === UPLOAD_ERR_OK) {
-            $image_url = $this->handle_image_upload($_FILES['poll_image']);
-            if ($image_url) {
-                $data['image_url'] = $image_url;
-            }
-        }
-        
-        $result = $this->database->update_poll($poll_id, $data);
-        
-        if ($result !== false) {
-            echo '<div class="notice notice-success"><p>' . __('Poll updated successfully!', 'pollmaster') . '</p></div>';
-        } else {
-            echo '<div class="notice notice-error"><p>' . __('Failed to update poll. Please try again.', 'pollmaster') . '</p></div>';
-        }
-    }
-    
-    /**
-     * Handle image upload
-     */
-    private function handle_image_upload($file) {
-        $allowed_types = array('image/jpeg', 'image/png');
-        $max_size = 5 * 1024 * 1024; // 5MB
-        
-        if (!in_array($file['type'], $allowed_types)) {
-            return false;
-        }
-        
-        if ($file['size'] > $max_size) {
-            return false;
-        }
-        
-        $upload_dir = wp_upload_dir();
-        $pollmaster_dir = $upload_dir['basedir'] . '/pollmaster';
-        
-        if (!file_exists($pollmaster_dir)) {
-            wp_mkdir_p($pollmaster_dir);
-        }
-        
-        $filename = uniqid('poll_') . '_' . sanitize_file_name($file['name']);
-        $filepath = $pollmaster_dir . '/' . $filename;
-        
-        if (move_uploaded_file($file['tmp_name'], $filepath)) {
-            return $upload_dir['baseurl'] . '/pollmaster/' . $filename;
-        }
-        
-        return false;
-    }
-    
-    /**
-     * Render weekly poll form
-     */
-    private function render_weekly_poll_form() {
-        // Implementation for weekly poll management
-        echo '<div class="wrap"><h1>' . __('Weekly Poll Management', 'pollmaster') . '</h1>';
-        echo '<p>' . __('Weekly poll management interface will be implemented here.', 'pollmaster') . '</p></div>';
-    }
-    
-    /**
-     * Render contests page
-     */
-    private function render_contests_page() {
-        // Implementation for contest management
-        echo '<div class="wrap"><h1>' . __('Contest Management', 'pollmaster') . '</h1>';
-        echo '<p>' . __('Contest management interface will be implemented here.', 'pollmaster') . '</p></div>';
-    }
-    
-    /**
-     * Render settings page
-     */
-    private function render_settings_page() {
-        if (isset($_POST['submit'])) {
-            update_option('pollmaster_settings', $_POST['pollmaster_settings']);
-            echo '<div class="notice notice-success"><p>' . __('Settings saved!', 'pollmaster') . '</p></div>';
-        }
-        
-        $settings = get_option('pollmaster_settings', array());
-        
+        ob_start();
         ?>
-        <div class="wrap">
-            <h1><?php _e('PollMaster Settings', 'pollmaster'); ?></h1>
+        <div class="pollmaster-modern-interface">
+            <div class="polls-header">
+                <h2><?php echo esc_html__('All Polls', 'pollmaster'); ?></h2>
+                <a href="<?php echo esc_url(admin_url('admin.php?page=pollmaster-all-polls&action=add')); ?>" class="btn btn-primary"><?php echo esc_html__('Add New Poll', 'pollmaster'); ?></a>
+            </div>
             
-            <form method="post" action="">
-                <?php wp_nonce_field('pollmaster_settings_action', 'pollmaster_settings_nonce'); ?>
-                
-                <table class="form-table">
-                    <tr>
-                        <th scope="row"><?php _e('Pop-up Settings', 'pollmaster'); ?></th>
-                        <td>
-                            <fieldset>
-                                <label>
-                                    <input type="checkbox" name="pollmaster_settings[auto_popup]" value="1" <?php checked(isset($settings['auto_popup']) ? $settings['auto_popup'] : 0, 1); ?>>
-                                    <?php _e('Enable automatic pop-up on homepage', 'pollmaster'); ?>
-                                </label><br>
-                                <label>
-                                    <input type="number" name="pollmaster_settings[popup_delay]" value="<?php echo isset($settings['popup_delay']) ? esc_attr($settings['popup_delay']) : 3; ?>" min="0" max="60">
-                                    <?php _e('Pop-up delay (seconds)', 'pollmaster'); ?>
-                                </label>
-                            </fieldset>
-                        </td>
-                    </tr>
-                    <tr>
-                        <th scope="row"><?php _e('Colors', 'pollmaster'); ?></th>
-                        <td>
-                            <fieldset>
-                                <label>
-                                    <?php _e('Primary Color:', 'pollmaster'); ?>
-                                    <input type="color" name="pollmaster_settings[primary_color]" value="<?php echo isset($settings['primary_color']) ? esc_attr($settings['primary_color']) : '#3b82f6'; ?>">
-                                </label><br>
-                                <label>
-                                    <?php _e('Secondary Color:', 'pollmaster'); ?>
-                                    <input type="color" name="pollmaster_settings[secondary_color]" value="<?php echo isset($settings['secondary_color']) ? esc_attr($settings['secondary_color']) : '#10b981'; ?>">
-                                </label>
-                            </fieldset>
-                        </td>
-                    </tr>
-                    <tr>
-                        <th scope="row"><?php _e('Social Sharing', 'pollmaster'); ?></th>
-                        <td>
-                            <fieldset>
-                                <label>
-                                    <input type="checkbox" name="pollmaster_settings[enable_facebook]" value="1" <?php checked(isset($settings['enable_facebook']) ? $settings['enable_facebook'] : 1, 1); ?>>
-                                    <?php _e('Enable Facebook sharing', 'pollmaster'); ?>
-                                </label><br>
-                                <label>
-                                    <input type="checkbox" name="pollmaster_settings[enable_twitter]" value="1" <?php checked(isset($settings['enable_twitter']) ? $settings['enable_twitter'] : 1, 1); ?>>
-                                    <?php _e('Enable Twitter/X sharing', 'pollmaster'); ?>
-                                </label><br>
-                                <label>
-                                    <input type="checkbox" name="pollmaster_settings[enable_whatsapp]" value="1" <?php checked(isset($settings['enable_whatsapp']) ? $settings['enable_whatsapp'] : 1, 1); ?>>
-                                    <?php _e('Enable WhatsApp sharing', 'pollmaster'); ?>
-                                </label><br>
-                                <label>
-                                    <input type="checkbox" name="pollmaster_settings[enable_linkedin]" value="1" <?php checked(isset($settings['enable_linkedin']) ? $settings['enable_linkedin'] : 1, 1); ?>>
-                                    <?php _e('Enable LinkedIn sharing', 'pollmaster'); ?>
-                                </label>
-                            </fieldset>
-                        </td>
-                    </tr>
-                </table>
-                
-                <?php submit_button(); ?>
-            </form>
+            <?php if (empty($polls)) : ?>
+                <div class="no-polls-message">
+                    <p><?php echo esc_html__('No polls found. Create your first poll!', 'pollmaster'); ?></p>
+                </div>
+            <?php else : ?>
+                <div class="polls-grid">
+                    <?php foreach ($polls as $poll) : ?>
+                        <div class="poll-card">
+                            <h3><?php echo esc_html($poll->title); ?></h3>
+                            <p><?php echo esc_html($poll->description); ?></p>
+                            <div class="poll-actions">
+                                <a href="<?php echo esc_url(admin_url('admin.php?page=pollmaster-all-polls&action=edit&poll_id=' . $poll->id)); ?>" class="btn btn-sm"><?php echo esc_html__('Edit', 'pollmaster'); ?></a>
+                                <a href="<?php echo esc_url(admin_url('admin.php?page=pollmaster-all-polls&action=results&poll_id=' . $poll->id)); ?>" class="btn btn-sm"><?php echo esc_html__('Results', 'pollmaster'); ?></a>
+                                <a href="<?php echo esc_url(wp_nonce_url(admin_url('admin.php?page=pollmaster-all-polls&action=delete&poll_id=' . $poll->id), 'delete_poll_' . $poll->id)); ?>" class="btn btn-sm btn-danger" onclick="return confirm('<?php echo esc_js__('Are you sure?', 'pollmaster'); ?>')"><?php echo esc_html__('Delete', 'pollmaster'); ?></a>
+                            </div>
+                        </div>
+                    <?php endforeach; ?>
+                </div>
+            <?php endif; ?>
         </div>
         <?php
-    }
-    
-    /**
-     * Handle admin AJAX requests
-     */
-    public function handle_admin_ajax() {
-        if (!wp_verify_nonce($_POST['nonce'], 'pollmaster_admin_nonce')) {
-            wp_die('Security check failed');
-        }
-        
-        $action = sanitize_text_field($_POST['admin_action']);
-        
-        switch ($action) {
-            case 'delete_poll':
-                $poll_id = (int)$_POST['poll_id'];
-                $result = $this->database->delete_poll($poll_id);
-                wp_send_json_success(array('deleted' => $result !== false));
-                break;
-                
-            default:
-                wp_send_json_error('Invalid action');
-                break;
-        }
-    }
-    
-    /**
-     * Sanitize settings
-     */
-    public function sanitize_settings($input) {
-        $sanitized = array();
-        
-        if (isset($input['auto_popup'])) {
-            $sanitized['auto_popup'] = 1;
-        }
-        
-        if (isset($input['popup_delay'])) {
-            $sanitized['popup_delay'] = max(0, min(60, (int)$input['popup_delay']));
-        }
-        
-        if (isset($input['primary_color'])) {
-            $sanitized['primary_color'] = sanitize_hex_color($input['primary_color']);
-        }
-        
-        if (isset($input['secondary_color'])) {
-            $sanitized['secondary_color'] = sanitize_hex_color($input['secondary_color']);
-        }
-        
-        $social_platforms = array('enable_facebook', 'enable_twitter', 'enable_whatsapp', 'enable_linkedin');
-        foreach ($social_platforms as $platform) {
-            if (isset($input[$platform])) {
-                $sanitized[$platform] = 1;
-            }
-        }
-        
-        return $sanitized;
+        return ob_get_clean();
     }
 }

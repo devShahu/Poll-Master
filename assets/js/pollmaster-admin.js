@@ -141,8 +141,13 @@
 
         submitAjaxForm($form) {
             const formData = new FormData($form[0]);
-            formData.append('action', $form.data('action'));
-            formData.append('nonce', pollmaster_admin.nonce);
+            const action = $form.data('action') || $form.find('input[name="action"]').val();
+            formData.append('action', action);
+            
+            // Don't append general nonce if form already has specific nonce
+            if (!$form.find('input[name*="nonce"]').length) {
+                formData.append('nonce', pollmaster_admin.nonce);
+            }
             
             $.ajax({
                 url: pollmaster_admin.ajax_url,

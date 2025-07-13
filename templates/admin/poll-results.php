@@ -20,24 +20,26 @@ if (!$poll_id) {
 $database = new PollMaster_Database();
 
 // Get poll data
-$poll = $database->get_poll($poll_id);
+$poll = $database->get_poll_admin($poll_id);
 if (!$poll) {
     wp_die('Poll not found.');
 }
 
 // Get poll results
-$results = $database->get_poll_results($poll_id);
-$total_votes = array_sum(array_column($results, 'votes'));
+$results_data = $database->get_poll_results($poll_id);
+$total_votes = $results_data['total_votes'];
+$vote_counts = $results_data['vote_counts'];
+$percentages = $results_data['percentages'];
 
 // Get poll options
-$options = json_decode($poll['options'], true) ?: [];
+$options = [$poll->option_a, $poll->option_b];
 
 // Get voting history
 $votes_history = $database->get_poll_votes_history($poll_id);
 
 // Get contest winner if applicable
 $contest_winner = null;
-if ($poll['is_contest']) {
+if ($poll->is_contest) {
     $contest_winner = $database->get_contest_winner($poll_id);
 }
 
@@ -80,7 +82,7 @@ if (!empty($votes_history)) {
     <div class="page-header">
         <h1 class="page-title">
             <span class="title-icon">📊</span>
-            Poll Results: <?php echo esc_html($poll['title']); ?>
+            Poll Results: <?php echo esc_html($poll->question); ?>
         </h1>
         
         <div class="page-actions">
@@ -95,11 +97,11 @@ if (!empty($votes_history)) {
             </a>
             
             <button class="button button-secondary" data-action="export-results">
-                <span class="button-icon">📤</span>
+                <img src="<?php echo plugins_url('/assets/images/copy-icon.svg', POLLMASTER_PLUGIN_FILE); ?>" alt="Share" class="button-icon" style="width: 16px; height: 16px;">
                 Export Results
             </button>
             
-            <?php if ($poll['is_contest'] && $poll['status'] === 'ended' && !$contest_winner): ?>
+            <?php if ($poll->is_contest && $poll->status === 'ended' && !$contest_winner): ?>
                 <button class="button button-primary" data-action="announce-winner" data-poll-id="<?php echo esc_attr($poll_id); ?>">
                     <span class="button-icon">🏆</span>
                     Announce Winner
@@ -114,41 +116,41 @@ if (!empty($votes_history)) {
             <div class="poll-meta">
                 <div class="meta-item">
                     <span class="meta-label">Status:</span>
-                    <span class="status-badge status-<?php echo esc_attr($poll['status']); ?>">
-                        <?php echo esc_html(ucfirst($poll['status'])); ?>
+                    <span class="status-badge status-<?php echo esc_attr($poll->status); ?>">
+                        <?php echo esc_html(ucfirst($poll->status)); ?>
                     </span>
                 </div>
                 
                 <div class="meta-item">
                     <span class="meta-label">Created:</span>
-                    <span class="meta-value"><?php echo esc_html(date('M j, Y g:i A', strtotime($poll['created_at']))); ?></span>
+                    <span class="meta-value"><?php echo esc_html(date('M j, Y g:i A', strtotime($poll->created_at))); ?></span>
                 </div>
                 
-                <?php if ($poll['end_date']): ?>
+                <?php if (isset($poll->contest_end_date) && $poll->contest_end_date): ?>
                     <div class="meta-item">
                         <span class="meta-label">End Date:</span>
-                        <span class="meta-value"><?php echo esc_html(date('M j, Y g:i A', strtotime($poll['end_date']))); ?></span>
+                        <span class="meta-value"><?php echo esc_html(date('M j, Y g:i A', strtotime($poll->contest_end_date))); ?></span>
                     </div>
                 <?php endif; ?>
                 
                 <div class="meta-item">
                     <span class="meta-label">Type:</span>
                     <div class="poll-badges">
-                        <?php if ($poll['is_contest']): ?>
+                        <?php if ($poll->is_contest): ?>
                             <span class="poll-badge contest">
                                 <span class="badge-icon">🏆</span>
                                 Contest
                             </span>
                         <?php endif; ?>
                         
-                        <?php if ($poll['is_weekly']): ?>
+                        <?php if ($poll->is_weekly): ?>
                             <span class="poll-badge weekly">
                                 <span class="badge-icon">📅</span>
                                 Weekly
                             </span>
                         <?php endif; ?>
                         
-                        <?php if (!$poll['is_contest'] && !$poll['is_weekly']): ?>
+                        <?php if (!$poll->is_contest && !$poll->is_weekly): ?>
                             <span class="poll-badge regular">
                                 <span class="badge-icon">📋</span>
                                 Regular
@@ -158,10 +160,10 @@ if (!empty($votes_history)) {
                 </div>
             </div>
             
-            <?php if (!empty($poll['description'])): ?>
+            <?php if (!empty($poll->description)): ?>
                 <div class="poll-description">
                     <h3>Description</h3>
-                    <p><?php echo esc_html($poll['description']); ?></p>
+                    <p><?php echo esc_html($poll->description); ?></p>
                 </div>
             <?php endif; ?>
         </div>
@@ -179,7 +181,9 @@ if (!empty($votes_history)) {
             </div>
             
             <div class="stat-card">
-                <div class="stat-icon">📤</div>
+                <div class="stat-icon">
+                    <img src="<?php echo plugins_url('/assets/images/copy-icon.svg', POLLMASTER_PLUGIN_FILE); ?>" alt="Share" style="width: 24px; height: 24px;">
+                </div>
                 <div class="stat-content">
                     <div class="stat-number"><?php echo esc_html($stats['total_shares']); ?></div>
                     <div class="stat-label">Social Shares</div>
@@ -215,7 +219,7 @@ if (!empty($votes_history)) {
     </div>
 
     <!-- Contest Winner -->
-    <?php if ($poll['is_contest'] && $contest_winner): ?>
+    <?php if ($poll->is_contest && $contest_winner): ?>
         <div class="contest-winner-section">
             <div class="winner-card">
                 <div class="winner-header">
@@ -269,32 +273,27 @@ if (!empty($votes_history)) {
             </div>
             
             <div class="results-list">
-                <?php foreach ($options as $index => $option): ?>
-                    <?php
-                    $option_votes = 0;
-                    foreach ($results as $result) {
-                        if ($result['option_index'] == $index) {
-                            $option_votes = $result['votes'];
-                            break;
-                        }
-                    }
-                    $percentage = $total_votes > 0 ? round(($option_votes / $total_votes) * 100, 1) : 0;
-                    ?>
-                    
+                <?php 
+                $option_data = [
+                    ['label' => 'A', 'text' => $poll->option_a, 'votes' => $vote_counts['option_a'], 'percentage' => $percentages['option_a']],
+                    ['label' => 'B', 'text' => $poll->option_b, 'votes' => $vote_counts['option_b'], 'percentage' => $percentages['option_b']]
+                ];
+                foreach ($option_data as $index => $option): 
+                ?>
                     <div class="result-item">
                         <div class="result-header">
                             <div class="option-info">
-                                <span class="option-number"><?php echo $index + 1; ?></span>
-                                <span class="option-text"><?php echo esc_html($option); ?></span>
+                                <span class="option-number"><?php echo esc_html($option['label']); ?></span>
+                                <span class="option-text"><?php echo esc_html($option['text']); ?></span>
                             </div>
                             <div class="result-stats">
-                                <span class="vote-count"><?php echo esc_html($option_votes); ?> votes</span>
-                                <span class="percentage"><?php echo esc_html($percentage); ?>%</span>
+                                <span class="vote-count"><?php echo esc_html($option['votes']); ?> votes</span>
+                                <span class="percentage"><?php echo esc_html($option['percentage']); ?>%</span>
                             </div>
                         </div>
                         
                         <div class="result-bar">
-                            <div class="bar-fill" style="width: <?php echo esc_attr($percentage); ?>%;"></div>
+                            <div class="bar-fill" style="width: <?php echo esc_attr($option['percentage']); ?>%;"></div>
                         </div>
                     </div>
                 <?php endforeach; ?>
@@ -314,34 +313,23 @@ if (!empty($votes_history)) {
                         </tr>
                     </thead>
                     <tbody>
-                        <?php foreach ($options as $index => $option): ?>
-                            <?php
-                            $option_votes = 0;
-                            foreach ($results as $result) {
-                                if ($result['option_index'] == $index) {
-                                    $option_votes = $result['votes'];
-                                    break;
-                                }
-                            }
-                            $percentage = $total_votes > 0 ? round(($option_votes / $total_votes) * 100, 1) : 0;
-                            ?>
-                            
+                        <?php foreach ($option_data as $option): ?>
                             <tr>
                                 <td class="column-option">
                                     <div class="option-cell">
-                                        <span class="option-number"><?php echo $index + 1; ?></span>
-                                        <span class="option-text"><?php echo esc_html($option); ?></span>
+                                        <span class="option-number"><?php echo esc_html($option['label']); ?></span>
+                                        <span class="option-text"><?php echo esc_html($option['text']); ?></span>
                                     </div>
                                 </td>
                                 <td class="column-votes">
-                                    <strong><?php echo esc_html($option_votes); ?></strong>
+                                    <strong><?php echo esc_html($option['votes']); ?></strong>
                                 </td>
                                 <td class="column-percentage">
-                                    <strong><?php echo esc_html($percentage); ?>%</strong>
+                                    <strong><?php echo esc_html($option['percentage']); ?>%</strong>
                                 </td>
                                 <td class="column-bar">
                                     <div class="table-bar">
-                                        <div class="table-bar-fill" style="width: <?php echo esc_attr($percentage); ?>%;"></div>
+                                        <div class="table-bar-fill" style="width: <?php echo esc_attr($option['percentage']); ?>%;"></div>
                                     </div>
                                 </td>
                             </tr>
@@ -370,7 +358,7 @@ if (!empty($votes_history)) {
                     </select>
                     
                     <button class="button button-secondary" data-action="export-history">
-                        <span class="button-icon">📤</span>
+                        <img src="<?php echo plugins_url('/assets/images/copy-icon.svg', POLLMASTER_PLUGIN_FILE); ?>" alt="Share" class="button-icon" style="width: 16px; height: 16px;">
                         Export History
                     </button>
                 </div>
@@ -390,7 +378,7 @@ if (!empty($votes_history)) {
                         <div class="vote-item">
                             <div class="vote-info">
                                 <span class="voter-name"><?php echo esc_html($vote['voter_name'] ?: 'Anonymous'); ?></span>
-                                <span class="vote-option">voted for "<?php echo esc_html($options[$vote['option_index']] ?? 'Unknown'); ?>"</span>
+                                <span class="vote-option">voted for "<?php echo esc_html($vote['vote_option'] === 'option_a' ? $poll->option_a : $poll->option_b); ?>"</span>
                             </div>
                             <div class="vote-time">
                                 <?php echo esc_html(human_time_diff(strtotime($vote['voted_at']), current_time('timestamp')) . ' ago'); ?>
@@ -407,7 +395,7 @@ if (!empty($votes_history)) {
         <div class="social-shares-section">
             <div class="shares-header">
                 <h2 class="shares-title">
-                    <span class="shares-icon">📤</span>
+                    <img src="<?php echo plugins_url('/assets/images/copy-icon.svg', POLLMASTER_PLUGIN_FILE); ?>" alt="Share" class="shares-icon" style="width: 20px; height: 20px; vertical-align: middle; margin-right: 8px;">
                     Social Sharing
                 </h2>
             </div>
@@ -419,11 +407,21 @@ if (!empty($votes_history)) {
                             <span class="platform-icon">
                                 <?php
                                 switch ($share['platform']) {
-                                    case 'facebook': echo '📘'; break;
-                                    case 'twitter': echo '🐦'; break;
-                                    case 'whatsapp': echo '💬'; break;
-                                    case 'linkedin': echo '💼'; break;
-                                    default: echo '📤'; break;
+                                    case 'facebook': 
+                                        echo '<img src="' . plugins_url('/assets/images/facebook-icon.svg', POLLMASTER_PLUGIN_FILE) . '" alt="Facebook" style="width: 16px; height: 16px;">';
+                                        break;
+                                    case 'twitter': 
+                                        echo '<img src="' . plugins_url('/assets/images/twitter-icon.svg', POLLMASTER_PLUGIN_FILE) . '" alt="Twitter" style="width: 16px; height: 16px;">';
+                                        break;
+                                    case 'whatsapp': 
+                                        echo '<img src="' . plugins_url('/assets/images/whatsapp-icon.svg', POLLMASTER_PLUGIN_FILE) . '" alt="WhatsApp" style="width: 16px; height: 16px;">';
+                                        break;
+                                    case 'linkedin': 
+                                        echo '<img src="' . plugins_url('/assets/images/linkedin-icon.svg', POLLMASTER_PLUGIN_FILE) . '" alt="LinkedIn" style="width: 16px; height: 16px;">';
+                                        break;
+                                    default: 
+                                        echo '<img src="' . plugins_url('/assets/images/copy-icon.svg', POLLMASTER_PLUGIN_FILE) . '" alt="Share" style="width: 16px; height: 16px;">';
+                                        break;
                                 }
                                 ?>
                             </span>
@@ -1181,12 +1179,9 @@ document.addEventListener('DOMContentLoaded', function() {
             
             // Get data from PHP
             const options = <?php echo json_encode($options); ?>;
-            const results = <?php echo json_encode($results); ?>;
+            const voteCounts = <?php echo json_encode(array_values($vote_counts)); ?>;
             
-            const chartData = options.map((option, index) => {
-                const result = results.find(r => r.option_index == index);
-                return result ? result.votes : 0;
-            });
+            const chartData = voteCounts;
             
             new Chart(ctx, {
                 type: 'doughnut',

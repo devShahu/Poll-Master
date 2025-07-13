@@ -26,11 +26,15 @@ class PollMaster_Ajax {
         add_action('wp_ajax_pollmaster_dismiss_popup', array($this, 'handle_dismiss_popup'));
         add_action('wp_ajax_pollmaster_get_results', array($this, 'handle_get_results'));
         add_action('wp_ajax_pollmaster_load_poll', array($this, 'handle_load_poll'));
+        add_action('wp_ajax_get_poll_data', array($this, 'handle_get_poll_data'));
+        add_action('wp_ajax_submit_vote', array($this, 'handle_submit_vote'));
         
         // AJAX actions for non-logged-in users (public)
         add_action('wp_ajax_nopriv_pollmaster_share', array($this, 'handle_share'));
         add_action('wp_ajax_nopriv_pollmaster_get_results', array($this, 'handle_get_results'));
         add_action('wp_ajax_nopriv_pollmaster_load_poll', array($this, 'handle_load_poll'));
+        add_action('wp_ajax_nopriv_get_poll_data', array($this, 'handle_get_poll_data'));
+        add_action('wp_ajax_nopriv_submit_vote', array($this, 'handle_submit_vote'));
     }
     
     /**
@@ -281,8 +285,7 @@ class PollMaster_Ajax {
         }
         
         // Generate poll HTML
-        $frontend = new PollMaster_Frontend();
-        $poll_html = $frontend->get_poll_html($poll->id, $user_voted);
+        $poll_html = $this->generate_poll_html($poll, $user_voted, $results);
         
         wp_send_json_success(array(
             'poll_html' => $poll_html,
@@ -474,6 +477,84 @@ class PollMaster_Ajax {
     }
     
     /**
+     * Generate poll HTML for AJAX responses
+     */
+    private function generate_poll_html($poll, $user_voted, $results) {
+        ob_start();
+        ?>
+        <div class="pollmaster-poll-widget bg-white rounded-lg shadow-lg p-6 max-w-md mx-auto" data-poll-id="<?php echo $poll->id; ?>">
+            <?php if ($poll->image_url): ?>
+                <div class="mb-4">
+                    <img src="<?php echo esc_url($poll->image_url); ?>" alt="Poll Image" class="w-full h-48 object-cover rounded-lg">
+                </div>
+            <?php endif; ?>
+            
+            <h3 class="text-xl font-bold text-gray-800 mb-4"><?php echo esc_html($poll->question); ?></h3>
+            
+            <?php if ($poll->is_contest): ?>
+                <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-3 mb-4">
+                    <div class="flex items-center">
+                        <svg class="w-5 h-5 text-yellow-600 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                            <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"></path>
+                        </svg>
+                        <span class="text-sm font-medium text-yellow-800"><?php _e('Contest Poll', 'pollmaster'); ?></span>
+                    </div>
+                    <?php if ($poll->contest_prize): ?>
+                        <p class="text-sm text-yellow-700 mt-1"><?php echo esc_html($poll->contest_prize); ?></p>
+                    <?php endif; ?>
+                </div>
+            <?php endif; ?>
+            
+            <?php if (!$user_voted && is_user_logged_in()): ?>
+                <!-- Voting interface -->
+                <div class="pollmaster-voting-interface">
+                    <div class="space-y-3">
+                        <button class="pollmaster-vote-btn w-full p-3 text-left bg-gray-50 hover:bg-blue-50 border border-gray-200 hover:border-blue-300 rounded-lg transition-all duration-200" data-poll-id="<?php echo $poll->id; ?>" data-option="option_a">
+                            <span class="font-medium text-gray-800"><?php echo esc_html($poll->option_a); ?></span>
+                        </button>
+                        <button class="pollmaster-vote-btn w-full p-3 text-left bg-gray-50 hover:bg-blue-50 border border-gray-200 hover:border-blue-300 rounded-lg transition-all duration-200" data-poll-id="<?php echo $poll->id; ?>" data-option="option_b">
+                            <span class="font-medium text-gray-800"><?php echo esc_html($poll->option_b); ?></span>
+                        </button>
+                    </div>
+                </div>
+            <?php else: ?>
+                <!-- Results interface -->
+                <div class="pollmaster-results-interface">
+                    <div class="space-y-3">
+                        <div class="pollmaster-result-item">
+                            <div class="flex justify-between items-center mb-1">
+                                <span class="font-medium text-gray-800"><?php echo esc_html($poll->option_a); ?></span>
+                                <span class="text-sm font-bold pollmaster-primary"><?php echo $results['percentages']['option_a']; ?>%</span>
+                            </div>
+                            <div class="w-full bg-gray-200 rounded-full h-3">
+                                <div class="pollmaster-bg-primary h-3 rounded-full transition-all duration-500" style="width: <?php echo $results['percentages']['option_a']; ?>%"></div>
+                            </div>
+                            <div class="text-xs text-gray-500 mt-1"><?php echo $results['vote_counts']['option_a']; ?> <?php _e('votes', 'pollmaster'); ?></div>
+                        </div>
+                        
+                        <div class="pollmaster-result-item">
+                            <div class="flex justify-between items-center mb-1">
+                                <span class="font-medium text-gray-800"><?php echo esc_html($poll->option_b); ?></span>
+                                <span class="text-sm font-bold pollmaster-secondary"><?php echo $results['percentages']['option_b']; ?>%</span>
+                            </div>
+                            <div class="w-full bg-gray-200 rounded-full h-3">
+                                <div class="pollmaster-bg-secondary h-3 rounded-full transition-all duration-500" style="width: <?php echo $results['percentages']['option_b']; ?>%"></div>
+                            </div>
+                            <div class="text-xs text-gray-500 mt-1"><?php echo $results['vote_counts']['option_b']; ?> <?php _e('votes', 'pollmaster'); ?></div>
+                        </div>
+                        
+                        <div class="text-center text-sm text-gray-600 mt-4">
+                            <?php printf(__('Total votes: %d', 'pollmaster'), $results['total_votes']); ?>
+                        </div>
+                    </div>
+                </div>
+            <?php endif; ?>
+        </div>
+        <?php
+        return ob_get_clean();
+    }
+    
+    /**
      * Handle contest winner announcement
      */
     public function handle_announce_winner() {
@@ -550,5 +631,126 @@ class PollMaster_Ajax {
                 'message' => __('Failed to announce winner.', 'pollmaster')
             ));
         }
+    }
+    
+    /**
+     * Handle get poll data request
+     */
+    public function handle_get_poll_data() {
+        // Verify nonce
+        if (!wp_verify_nonce($_POST['nonce'], 'pollmaster_pages_nonce')) {
+            wp_send_json_error(array(
+                'message' => __('Security check failed.', 'pollmaster')
+            ));
+        }
+        
+        $poll_id = (int) $_POST['poll_id'];
+        
+        if (!$poll_id) {
+            wp_send_json_error(array(
+                'message' => __('Invalid poll ID.', 'pollmaster')
+            ));
+        }
+        
+        // Get poll data
+        $poll = $this->database->get_poll($poll_id);
+        if (!$poll) {
+            wp_send_json_error(array(
+                'message' => __('Poll not found.', 'pollmaster')
+            ));
+        }
+        
+        wp_send_json_success(array(
+            'id' => $poll->id,
+            'question' => $poll->question,
+            'option_a' => $poll->option_a,
+            'option_b' => $poll->option_b,
+            'image_url' => $poll->image_url,
+            'is_contest' => (bool) $poll->is_contest,
+            'contest_prize' => $poll->contest_prize
+        ));
+    }
+    
+    /**
+     * Handle submit vote request
+     */
+    public function handle_submit_vote() {
+        // Verify nonce
+        if (!wp_verify_nonce($_POST['nonce'], 'pollmaster_pages_nonce')) {
+            wp_send_json_error(array(
+                'message' => __('Security check failed.', 'pollmaster')
+            ));
+        }
+        
+        $poll_id = (int) $_POST['poll_id'];
+        $option = sanitize_text_field($_POST['option']);
+        
+        // Validate inputs
+        if (!$poll_id || !in_array($option, array('a', 'b'))) {
+            wp_send_json_error(array(
+                'message' => __('Invalid vote data.', 'pollmaster')
+            ));
+        }
+        
+        // Convert option to database format
+        $vote_option = $option === 'a' ? 'option_a' : 'option_b';
+        
+        // Check if poll exists
+        $poll = $this->database->get_poll($poll_id);
+        if (!$poll) {
+            wp_send_json_error(array(
+                'message' => __('Poll not found.', 'pollmaster')
+            ));
+        }
+        
+        // For non-logged-in users, use IP-based voting
+        $user_id = is_user_logged_in() ? get_current_user_id() : null;
+        $user_ip = $_SERVER['REMOTE_ADDR'];
+        
+        // Check if user/IP already voted
+        if ($user_id && $this->database->has_user_voted($poll_id, $user_id)) {
+            wp_send_json_error(array(
+                'message' => __('You have already voted on this poll.', 'pollmaster')
+            ));
+        }
+        
+        // For non-logged-in users, check IP-based voting
+        if (!$user_id && $this->database->has_ip_voted($poll_id, $user_ip)) {
+            wp_send_json_error(array(
+                'message' => __('You have already voted on this poll.', 'pollmaster')
+            ));
+        }
+        
+        // Cast vote
+        $vote_result = $this->database->cast_vote($poll_id, $user_id, $vote_option, $user_ip);
+        
+        if (!$vote_result) {
+            wp_send_json_error(array(
+                'message' => __('Failed to cast vote. Please try again.', 'pollmaster')
+            ));
+        }
+        
+        // Get updated results
+        $results = $this->database->get_poll_results($poll_id);
+        
+        // Prepare response data
+        $response_data = array(
+            'message' => __('Thank you for voting!', 'pollmaster'),
+            'results' => $results,
+            'poll' => array(
+                'id' => $poll->id,
+                'question' => $poll->question,
+                'option_a' => $poll->option_a,
+                'option_b' => $poll->option_b,
+                'image_url' => $poll->image_url,
+                'is_contest' => (bool) $poll->is_contest,
+                'contest_prize' => $poll->contest_prize
+            ),
+            'vote_counts' => $results['vote_counts'],
+            'percentages' => $results['percentages'],
+            'total_votes' => $results['total_votes']
+        );
+        
+        wp_send_json_success($response_data);
     }
 }
